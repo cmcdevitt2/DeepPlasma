@@ -1,0 +1,3 @@
+[submodule "DeepRunAway"]
+	path = DeepRunAway
+	url = https://github.com/cmcdevitt2/RunAwayPINNs
