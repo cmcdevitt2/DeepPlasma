@@ -1,10 +1,10 @@
-# JAX Particle Pusher (JONTA Ion GC)
+# JONTA ion guiding center module
 
 ## Prerequisites
 *   **Python 3.12**
 *   NVIDIA GPUs with CUDA 12 drivers
 
-## Environment Setup
+## Environmental Setup and Code Execution
 
 ### 1. Create Virtual Environment
 Ensure you are using Python 3.12 to create the environment.
@@ -35,4 +35,9 @@ Run the main particle pushing script:
 
 ```bash
 python JONTA_IonGC.py
+```
+
+Bin the particle data:
+```bash
+python BinParticles.py
 ```
