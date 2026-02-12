@@ -12,6 +12,7 @@ Ensure you are using Python 3.12 to create the environment.
 ```bash
 python3.12 -m venv jax_env
 source jax_env/bin/activate
+```
 
 ### 2. Install Dependencies
 Once the environment is activated, upgrade pip and install JAX with CUDA support.
@@ -20,6 +21,7 @@ Once the environment is activated, upgrade pip and install JAX with CUDA support
 pip install --upgrade pip
 pip install "jax[cuda12]"
 pip install -r requirements.txt
+```
 
 ### 3. Running the Code
 Before running the simulation, create the required output directories inside the project folder:
@@ -27,8 +29,10 @@ Before running the simulation, create the required output directories inside the
 ```bash
 mkdir figures
 mkdir data
+```
 
 Run the main particle pushing script:
 
 ```bash
 python JONTA_IonGC.py
+```
