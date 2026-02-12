@@ -1,4 +1,4 @@
-# JONTA ion guiding center module
+# Ion Mean Escape Time
 
 ## Prerequisites
 *   **Python 3.12**
