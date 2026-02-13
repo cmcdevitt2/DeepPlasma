@@ -28,8 +28,7 @@ A GPU-accelerated particle-based solver built on JAX and PyTorch. It utilizes a 
   <img src="figures/orbit_CounterCurrent.png" width="33%" /> 
 </p>
 
-> **Figure 1:** Example collisionless ion orbits in the circular flux surface geometry used by JONTA. **Left:** Co-current passing and trapped orbits. **Right:** Counter-current passing and trapped orbits.
-
+> **Figure 1:** Example collisionless ion orbits. **Left:** Co-current passing and trapped orbits. **Right:** Counter-current passing and trapped orbits.
 
 
 ## References
