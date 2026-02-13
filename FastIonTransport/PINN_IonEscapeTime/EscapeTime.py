@@ -68,10 +68,10 @@ A = 100
 wPDE = 100
 wBC = 1
 lr = 5.e-4
-N = 10_000
-Nbc = 3000
-N_test = 20_000
-epochSOAP = 10_001
+N = 2_000_000
+Nbc = 1_000_000
+N_test = 1_000_000
+epochSOAP = 20_001
 resample_every = 8000 # residual based or random reshuffling of training points
 resample_train_points = True
 k, c = 1.0, 1.0
@@ -87,7 +87,7 @@ NameTestLossToLoad = 'model/TestLosses.dat'
 TrainSOAP = True
 TrainSSBroyden = TrainSOAP
 
-epochSSBroyden = 1000
+epochSSBroyden = 5000
 InputDim = 3
 
 # Points at which cross sections of data will be plotted
@@ -118,8 +118,8 @@ class PINN(nn.Module):
         self.linear3 = nn.Linear(h_dim, h_dim);  self.act3 = nn.Tanh()
         self.linear4 = nn.Linear(h_dim, h_dim);  self.act4 = nn.Tanh()
         self.linear5 = nn.Linear(h_dim, h_dim);  self.act5 = nn.Tanh()
-        #self.linear6 = nn.Linear(h_dim, h_dim);  self.act6 = nn.Tanh()
-        #self.linear7 = nn.Linear(h_dim, h_dim);  self.act7 = nn.Tanh()
+        self.linear6 = nn.Linear(h_dim, h_dim);  self.act6 = nn.Tanh()
+        self.linear7 = nn.Linear(h_dim, h_dim);  self.act7 = nn.Tanh()
         self.linearLast = nn.Linear(h_dim, out_dim)
         self._init_weights()
 
@@ -130,8 +130,8 @@ class PINN(nn.Module):
                 self.linear3,
                 self.linear4,
                 self.linear5,
-                #self.linear6,
-                #self.linear7,
+                self.linear6,
+                self.linear7,
                 self.linearLast
         ]:
             nn.init.xavier_normal_(m.weight)
@@ -144,8 +144,8 @@ class PINN(nn.Module):
         x = self.act3(self.linear3(x))
         x = self.act4(self.linear4(x))
         x = self.act5(self.linear5(x))
-        #x = self.act6(self.linear6(x))
-        #x = self.act7(self.linear7(x))
+        x = self.act6(self.linear6(x))
+        x = self.act7(self.linear7(x))
         x = self.linearLast(x)
         return x
    
