@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import os
 import time
 import argparse
-from scipy.integrate import simps
+from scipy.integrate import simpson
 
 # Set seeds and precision
 torch.manual_seed(1234)
@@ -48,7 +48,7 @@ md = 2   # deuterium mass
 mt = 3   # tritium mass
 
 # Training Hyperparameters
-epochsSOAP = 50000
+epochsSOAP = 25000
 epochsBFGS = 10000 # Max iter for SSBroyden/L-BFGS
 lr = 1.e-3
 pts = 100000
@@ -59,7 +59,7 @@ InputDim = 5     # Feature transform results in 5 inputs: E, xi^2, x^2, x*xi, t
 E_val = 8
 xi_val =0.8
 x_val = 0
-t_val = 0.5
+t_val = 1.0
 # Normalized equivalents for plotting
 E_valNorm = (E_val - EMin) / (EMax - EMin)
 xi_valNorm = (xi_val - xiMin) / (xiMax - xiMin)
@@ -129,7 +129,7 @@ def output_transform(outputs, Energy, xi, x, t):
     
     exponent = term1 + term2 + boundary_scaling * outputs
     
-    prefactor = 1 / (2 * np.pi)**1.5 * nt / Te**1.5
+    prefactor = nt / Te**1.5
     fa = prefactor * torch.exp(exponent)
     
     return fa
@@ -208,7 +208,7 @@ def fp_pde(model, EnergyNorm, xiNorm, xNorm, tNorm):
 
     # Normalization terms for Loss
     Ebar = Energy / Te
-    fa0 = 1 / (2 * np.pi)**1.5 * nt / Te**1.5
+    fa0 = nt / Te**1.5
     
     DeltaE = 0.05 * EMax
     ECut = 0.8 * EMax
@@ -479,11 +479,13 @@ def main():
         # Calculate Residual for this slice
         # requires grad
         with torch.enable_grad():
-            res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
+            #res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
+            res_tens = fp_pde(model, E_in, xi_in, x_in, t_in)
         # Note: fp_pde returns (scaling * residual). DeepXDE code often plots just residual?
         # PlotFPHotSpot plots "residual of fa" but uses model.predict(operator=pde) which returns the loss form usually.
         # We will plot the scaled residual (the actual loss contribution).
-        resnew = (scaling * res_tens).detach().cpu().numpy().reshape(xinew.shape)
+        #resnew = (scaling * res_tens).detach().cpu().numpy().reshape(xinew.shape)
+        resnew = res_tens.detach().cpu().numpy().reshape(xinew.shape)
 
         # FIG 1: f_a(x, xi)
         fig1, ax1 = plt.subplots(num=1, clear=True)
@@ -540,11 +542,13 @@ def main():
         Te_val = 1 / ne_val
         
         fMaxnew = nt_val / Te_val**1.5 * np.exp(-Enew / Te_val)
-        
+
         # Residual for this slice
         with torch.enable_grad():
-            res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
-        resExinew = (scaling * res_tens).detach().cpu().numpy().reshape(Enew.shape)
+            #res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
+            res_tens = fp_pde(model, E_in, xi_in, x_in, t_in)
+        #resExinew = (scaling * res_tens).detach().cpu().numpy().reshape(Enew.shape)
+        resExinew = (res_tens).detach().cpu().numpy().reshape(Enew.shape)
 
         # FIG 3: fa / fMax
         fig3, ax3 = plt.subplots(num=3, clear=True)
@@ -577,7 +581,7 @@ def main():
         # Integrate fEVsxinew over xi (axis 0 of Enew/fEVsxinew which corresponds to xigrid)
         # fEVsxinew shape is (numxi, numE)
         # We integrate along axis 0 (xi)
-        fEnew = 0.5 * simps(fEVsxinew, xigrid, axis=0) # 0.5 factor from PlotFPHotSpot
+        fEnew = 0.5 * simpson(fEVsxinew, xigrid, axis=0) # 0.5 factor from PlotFPHotSpot
         
         # Max dist at this location (independent of xi, so just take one slice)
         fMax_1d = fMaxnew[0, :] 
@@ -587,6 +591,11 @@ def main():
         fig5.set_tight_layout(True)
         ax5.plot(Energygrid, fEnew, label='<$f_a$>', linestyle='-', color='blue', linewidth=2)
         ax5.plot(Energygrid, fMax_1d, label='$f^{Max}_a$', linestyle='--', color='blue', linewidth=2)
+
+        # Set y-limits: min=1e-10, max=max value of the function
+        ymax = np.max(fEnew)*1.5
+        ax5.set_ylim(1e-10, ymax)
+        
         ax5.set_xlabel("$E/T_0$")
         ax5.set_title("Average Energy Dist.")
         ax5.set_yscale("log")
@@ -595,27 +604,6 @@ def main():
 
         print("All plots saved to ./figures/")
         plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
     
 if __name__ == "__main__":
