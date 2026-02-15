@@ -48,10 +48,10 @@ md = 2   # deuterium mass
 mt = 3   # tritium mass
 
 # Training Hyperparameters
-epochsSOAP = 500
-epochsBFGS = 200 # Max iter for SSBroyden/L-BFGS
+epochsSOAP = 25000
+epochsBFGS = 10000 # Max iter for SSBroyden/L-BFGS
 lr = 1.e-3
-pts = 100000      # Number of training points
+pts = 200000      # Number of training points
 pts_test = 2*pts    # Number of test points
 batch_size = pts # Full batch
 InputDim = 5     # Feature transform results in 5 inputs: E, xi^2, x^2, x*xi, t
@@ -136,9 +136,9 @@ def output_transform(outputs, Energy, xi, x, t):
     
     return fa
 
-# -----------------------------------------
+# ----------------------------------
 # PDE Definition
-# -----------------------------------------
+# ----------------------------------
 def fp_pde(model, EnergyNorm, xiNorm, xNorm, tNorm):
     # Enable gradients for inputs
     EnergyNorm = EnergyNorm.clone().detach().requires_grad_(True)
@@ -153,8 +153,9 @@ def fp_pde(model, EnergyNorm, xiNorm, xNorm, tNorm):
     t      = tMin + (tMax - tMin) * tNorm
 
     # Prepare input for network (Feature Transform)
-    # The network takes normalized inputs transformed into features
-    network_input = feature_transform(EnergyNorm, xiNorm, xNorm, tNorm)
+    # xi and x have to be centered around zero to ensure
+    # the symmetry f(-x,-xi)=f(x,xi) is enforced
+    network_input = feature_transform(EnergyNorm, xi, x, tNorm)
     
     # Get Network Output
     nn_output = model(network_input)
@@ -549,8 +550,12 @@ def main():
         t_in = torch.ones_like(xi_in) * t_valNorm
         
         with torch.no_grad():
+            # Calculate physical coordinates for the transform inputs
+            xi_phys_in = xiMin + (xiMax - xiMin) * xi_in
+            x_phys_in = xMin + (xMax - xMin) * x_in
+            
             # Features
-            features = feature_transform(E_in, xi_in, x_in, t_in)
+            features = feature_transform(E_in, xi_phys_in, x_phys_in, t_in)
             nn_out = model(features)
             
             # Physical coordinates for output transform
@@ -609,7 +614,10 @@ def main():
         t_in = torch.ones_like(E_in) * t_valNorm
         
         with torch.no_grad():
-            features = feature_transform(E_in, xi_in, x_in, t_in)
+            xi_phys_in = xiMin + (xiMax - xiMin) * xi_in
+            x_phys_in = xMin + (xMax - xMin) * x_in
+            
+            features = feature_transform(E_in, xi_phys_in, x_phys_in, t_in)
             nn_out = model(features)
             
             E_phys = torch.tensor(flat_E, device=device).unsqueeze(1)
