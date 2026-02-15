@@ -14,7 +14,7 @@ The solver employs a test-particle collision operator and enforces physical symm
   <img src="figures_README/loss.png" width="24%" />
 </p>
 
-> **Figure 1:** Energy slices of the ion distribution $f\left( x, \xi, E, t \right)$ at $t=0.5$ for energies $E/T_0 = 3$, $E/T_0 = 6$, $E/T_0 = 9$ and loss history.
+> **Figure 1:** Energy slices of the ion distribution $f\left( x, \xi, E, t \right)$ at $t=0.5$ for three different energies and loss history.
 
 
 ## Prerequisites
