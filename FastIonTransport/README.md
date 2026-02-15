@@ -18,7 +18,7 @@ The predicted mean escape time provides a metric for quality of fast ion confine
   <img src="figures/T_Z_R_xim0o8_Dec7_2025.png" width="24%" />
 </p>
 
-> **Figure 2:** Mean escape time (log scale) for ions with different initial pitches, showing phase space regions of good fast ion confinement and versus prompt loss.
+> **Figure 1:** Mean escape time (log scale) for ions with different initial pitches, showing phase space regions of good fast ion confinement and versus prompt loss.
 
 #### 2. JONTA (Just anOther fuNcTionAl pusher) Ion Guiding Center Module
 A GPU-accelerated particle-based solver built on JAX and PyTorch. It utilizes a Runge-Kutta integration scheme for the guiding center equations and a Monte Carlo operator for collisions.
@@ -28,7 +28,7 @@ A GPU-accelerated particle-based solver built on JAX and PyTorch. It utilizes a 
   <img src="figures/orbit_CounterCurrent.png" width="33%" /> 
 </p>
 
-> **Figure 1:** Example collisionless ion orbits. **Left:** Co-current passing and trapped orbits. **Right:** Counter-current passing and trapped orbits.
+> **Figure 2:** Example collisionless ion orbits. **Left:** Co-current passing and trapped orbits. **Right:** Counter-current passing and trapped orbits.
 
 
 ## References

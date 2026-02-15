@@ -8,15 +8,13 @@ This code utilizes a PINN to provide a time-dependent non-perturbative solution 
 The solver employs a test-particle collision operator and enforces physical symmetries and boundary conditions via specialized input/output network layers.
 
 <p float="left">
-  <img src="figures/fa_x_xi_E_3.png" width="24%" />
-  <img src="figures/fa_x_xi_E_6.png" width="24%" />
-  <img src="figures/fa_x_xi_E_9.png" width="24%" />
-  <img src="figures/loss.png" width="24%" />
+  <img src="figures_README/fa_x_xi_E_3.png" width="24%" />
+  <img src="figures_README/fa_x_xi_E_6.png" width="24%" />
+  <img src="figures_README/fa_x_xi_E_9.png" width="24%" />
+  <img src="figures_README/loss.png" width="24%" />
 </p>
-> **Figure 1:** Energy slices of the ion distribution $f\left( x, \xi, E, t \right)$ at $t=0.5$ for energies $E/T_0 = 3$, $E/T_0 = 6$, $E/T_0 = 9$ and loss history.
 
-## Reference
-[1] C. J. McDevitt and X.-Z. Tang, "A physics-informed deep learning description of Knudsen layer reduction," Phys. Plasmas **31**, 062701 (2024)
+> **Figure 1:** Energy slices of the ion distribution $f\left( x, \xi, E, t \right)$ at $t=0.5$ for energies $E/T_0 = 3$, $E/T_0 = 6$, $E/T_0 = 9$ and loss history.
 
 
 ## Prerequisites
@@ -66,3 +64,7 @@ Plot results:
 ```bash
 python VFPtest.py --plot
 ```
+
+## Reference
+[1] C. J. McDevitt and X.-Z. Tang, "A physics-informed deep learning description of Knudsen layer reduction," Phys. Plasmas **31**, 062701 (2024)
+
