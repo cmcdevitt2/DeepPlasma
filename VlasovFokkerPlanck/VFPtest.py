@@ -48,24 +48,26 @@ md = 2   # deuterium mass
 mt = 3   # tritium mass
 
 # Training Hyperparameters
-epochsSOAP = 25000
-epochsBFGS = 10000 # Max iter for SSBroyden/L-BFGS
+epochsSOAP = 500
+epochsBFGS = 200 # Max iter for SSBroyden/L-BFGS
 lr = 1.e-3
-pts = 100000
+pts = 100000      # Number of training points
+pts_test = 2*pts    # Number of test points
 batch_size = pts # Full batch
 InputDim = 5     # Feature transform results in 5 inputs: E, xi^2, x^2, x*xi, t
 
 # Plotting slice defaults
-E_val = 8
-xi_val =0.8
-x_val = 0
-t_val = 1.0
+E_val  = 8
+xi_val = 0.8
+x_val  = 0
+t_val  = 0.5
 # Normalized equivalents for plotting
 E_valNorm = (E_val - EMin) / (EMax - EMin)
 xi_valNorm = (xi_val - xiMin) / (xiMax - xiMin)
 x_valNorm = (x_val - xMin) / (xMax - xMin)
 t_valNorm = (t_val - tMin) / (tMax - tMin)
 
+plt.rcParams.update({'font.size': 18})
 # --------------------------------
 # PINN Architecture
 # --------------------------------
@@ -272,31 +274,48 @@ def pinn_loss(model, E_train, xi_train, x_train, t_train):
 
     return loss_pde
 
+def fit_lbfgsb(model, loss_fn, E_train, xi_train, x_train, t_train, 
+               E_test, xi_test, x_test, t_test, 
+               maxiter, print_every, loss_history=None, steps_history=None, 
+               test_loss_history=None, global_step_start=0):
+    
+    flat_params_init = get_flat_params(model)
+    nfeval = [1]
+    
+    def callback(params):
+        if nfeval[0] % print_every == 0:
+            set_flat_params(model, params)
 
-def fit_lbfgsb(model, loss_fn, E_train, xi_train, x_train, t_train, maxiter, print_every):
-   flat_params_init = get_flat_params(model)
-   nfeval = [1]
-   def callback(params):
-       if nfeval[0] % print_every == 0:
-           set_flat_params(model, params)
-           loss = loss_fn(model, E_train, xi_train, x_train, t_train)
-           #test_PDE = compute_test_loss()
-           #PrevGlobalEpoch = epochGlobalList[-1] if epochGlobalList else 0
-           #TestPDE.append(test_PDE)
-           #epochGlobalList.append(PrevGlobalEpoch+print_every)
-           print(f"Epoch {nfeval[0]}: Training Loss = {loss.item():.4e}")
-       nfeval[0] += 1
-   res = minimize(
-       lbfgs_loss_and_grad,
-       flat_params_init,
-       args=(model, loss_fn, E_train, xi_train, x_train, t_train),
-       method='BFGS',
-       jac=True,
-       callback=callback,
-       options={'maxiter': maxiter, 'disp': None}
-   )
-   set_flat_params(model, res.x)
-   return res
+            # Training loss
+            loss = loss_fn(model, E_train, xi_train, x_train, t_train)
+            loss_val = loss.item()
+            
+            # Test loss
+            test_loss_val = compute_test_loss(model, E_test, xi_test, x_test, t_test)
+            
+            if loss_history is not None:
+                loss_history.append(loss_val)
+            if test_loss_history is not None:
+                test_loss_history.append(test_loss_val)
+            if steps_history is not None:
+                # The current global step is the start point + current BFGS iteration
+                steps_history.append(global_step_start + nfeval[0])
+                
+            print(f"Epoch {nfeval[0]}: Train Loss = {loss_val:.4e}, Test Loss = {test_loss_val:.4e}")
+           
+        nfeval[0] += 1
+       
+    res = minimize(
+        lbfgs_loss_and_grad,
+        flat_params_init,
+        args=(model, loss_fn, E_train, xi_train, x_train, t_train),
+        method='BFGS',
+        jac=True,
+        callback=callback,
+        options={'maxiter': maxiter, 'disp': None}
+    )
+    set_flat_params(model, res.x)
+    return res
 
 
 
@@ -321,6 +340,45 @@ def hammersley_sequence(n_samples, dim):
     sampler = skopt.sampler.Hammersly()
     # Hammersley gen returns [0,1]
     return np.asarray(sampler.generate([(0.0, 1.0)]*dim, n_samples), dtype=np.float64)
+
+
+# -----------------------------------------
+# Utilities
+# -----------------------------------------
+def compute_test_loss(model, E_test, xi_test, x_test, t_test, max_batch=10000):
+    was_training = model.training
+    model.eval()
+    
+    total_sse = 0.0 # Sum of squared errors
+    count = 0
+    N_test = E_test.shape[0]
+    
+    # Enable gradients because fp_pde requires them for derivatives
+    with torch.set_grad_enabled(True):
+        for s in range(0, N_test, max_batch):
+            # Slice the data
+            E_batch = E_test[s:s+max_batch]
+            xi_batch = xi_test[s:s+max_batch]
+            x_batch = x_test[s:s+max_batch]
+            t_batch = t_test[s:s+max_batch]
+            
+            # Compute residual (returns scaling * residual_core)
+            # Note: fp_pde returns the raw tensor, unlike pinn_loss which averages it
+            res = fp_pde(model, E_batch, xi_batch, x_batch, t_batch)
+            
+            # Accumulate sum of squares on CPU
+            total_sse += res.pow(2).sum().item()
+            count += res.numel()
+            
+            # Free memory
+            del E_batch, xi_batch, x_batch, t_batch, res
+
+    if was_training:
+        model.train()
+        
+    # Return Mean Squared Error
+    return total_sse / max(1, count)
+
 
 # -------------------------------
 # Main
@@ -358,13 +416,25 @@ def main():
         xi_train = X_train[:, 1:2]
         x_train  = X_train[:, 2:3]
         t_train  = X_train[:, 3:4]
-    
+
+        # Similarly for test points
+        print(f"Generating {pts_test} Test points...")
+        raw_points_test = hammersley_sequence(pts_test, 4)
+        X_test = torch.tensor(raw_points_test, dtype=torch.float64, device=device)
+        
+        E_test  = X_test[:, 0:1]
+        xi_test = X_test[:, 1:2]
+        x_test  = X_test[:, 2:3]
+        t_test  = X_test[:, 3:4]
+        
         # Loss lists
         loss_history = []
-        TrainingLossPDE = []
-        StepsTraining = []
+        test_loss_history = []
+        steps_history = []
 
+        ##########################
         # Phase 1: SOAP Optimizer
+        ##########################
         print("Starting SOAP training...")
         optimizer = pytorch_optimizer.optimizer.soap.SOAP(
             model.parameters(), 
@@ -387,35 +457,52 @@ def main():
             loss.backward()
             optimizer.step()
             scheduler.step()
-        
-            loss_val = loss.item()
-            loss_history.append(loss_val)
 
             if epoch % 100 == 0:
-                print(f"SOAP Epoch {epoch}/{epochsSOAP}: Loss = {loss_val:.4e}")
+                # training loss
+                loss_val = loss.item()
+                loss_history.append(loss_val)
+                steps_history.append(epoch) # Track every step
+
+                # test loss
+                test_loss_val = compute_test_loss(model, E_test, xi_test, x_test, t_test)
+                test_loss_history.append(test_loss_val)
+
+                print(f"SOAP Epoch {epoch}/{epochsSOAP}: Train = {loss_val:.4e}, Test = {test_loss_val:.4e}")
 
         print(f"SOAP training finished. Time: {time.time()-st_time:.2f}s")
 
+        ####################
         # Phase 2: SSBroyden
+        ####################
         print("Starting SSBroyden training...")
-        # SSBroyden is a memory-optimized BFGS variant. L-BFGS-B is the closest standard SciPy equivalent.
-        fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train, epochsBFGS, 100)
-    
+        fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train, 
+                   E_test, xi_test, x_test, t_test, # Pass test data
+                   epochsBFGS, 100, 
+                   loss_history, steps_history, test_loss_history, # Pass test list
+                   global_step_start=epochsSOAP)    
         print("L-BFGS-B training finished.")
 
         # Saving
         os.makedirs('./model', exist_ok=True)
         torch.save(model.state_dict(), model_path)
         np.savetxt('./model/loss_history.txt', np.array(loss_history))
-    
+        np.savetxt('./model/test_loss_history.txt', np.array(test_loss_history))
+        np.savetxt('./model/steps_history.txt', np.array(steps_history))
+
         # Loss history
-        plt.figure()
-        plt.plot(loss_history)
-        plt.yscale('log')
-        plt.xlabel('Iterations')
-        plt.ylabel('Loss (MSE)')
-        plt.title('Training Loss History')
-        plt.savefig('./model/loss.png')
+        fig_loss, ax_loss = plt.subplots()
+        fig_loss.set_tight_layout(True)
+        
+        ax_loss.plot(steps_history, loss_history, label='Train Loss')
+        ax_loss.plot(steps_history, test_loss_history, label='Test Loss', linestyle='--')
+        ax_loss.set_yscale('log')
+        ax_loss.set_xlabel('Iterations')
+        ax_loss.set_ylabel('Loss (MSE)')
+        #ax_loss.set_title('Training Loss History')
+        ax_loss.legend()
+        
+        fig_loss.savefig('./model/loss.png')
         print("Model and plots saved.")
 
 
@@ -443,9 +530,9 @@ def main():
         xigrid = np.linspace(xiMin, xiMax, numxi)
         xgrid = np.linspace(xMin, xMax, numx)
 
-        # ------------------------------------------------------------------
+        # -------------------------------------------------
         # Plot 1: f(x, xi) at constant Energy and Time
-        # ------------------------------------------------------------------
+        # -------------------------------------------------
         print("Generating f(x, xi) contour...")
         xinew, xnew = np.meshgrid(xigrid, xgrid) # shape (numx, numxi)
         
