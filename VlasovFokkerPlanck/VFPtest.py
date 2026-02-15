@@ -8,6 +8,8 @@ import skopt
 import matplotlib.pyplot as plt
 import os
 import time
+import argparse
+from scipy.integrate import simps
 
 # Set seeds and precision
 torch.manual_seed(1234)
@@ -53,10 +55,16 @@ pts = 100000
 batch_size = pts # Full batch
 InputDim = 5     # Feature transform results in 5 inputs: E, xi^2, x^2, x*xi, t
 
+# Plotting slice defaults
 E_val = 8
 xi_val =0.8
 x_val = 0
 t_val = 0.5
+# Normalized equivalents for plotting
+E_valNorm = (E_val - EMin) / (EMax - EMin)
+xi_valNorm = (xi_val - xiMin) / (xiMax - xiMin)
+x_valNorm = (x_val - xMin) / (xMax - xMin)
+t_valNorm = (t_val - tMin) / (tMax - tMin)
 
 # --------------------------------
 # PINN Architecture
@@ -111,9 +119,6 @@ def output_transform(outputs, Energy, xi, x, t):
     
     # Base distribution fa0
     # The original code calculates fa based on network output 'outputs'
-    
-    # Original TF logic:
-    # fa = 1/(...) * exp( -Ebar - DE**2 / (...) * ... + (complex boundary term) * NN_output )
     
     term1 = -Ebar
     term2 = - (DE**2 / ((EMax - Energy)**2 + DE**2)) * Energy * (Te - Tmin) / Tmin / Te
@@ -317,107 +322,301 @@ def hammersley_sequence(n_samples, dim):
     # Hammersley gen returns [0,1]
     return np.asarray(sampler.generate([(0.0, 1.0)]*dim, n_samples), dtype=np.float64)
 
-# -----------------------------------------
-# Training Logic
-# -----------------------------------------
+# -------------------------------
+# Main
+# -------------------------------
 def main():
+    parser = argparse.ArgumentParser(description='PINN Training and Plotting')
+    parser.add_argument('--train', action='store_true', help='Train a new model')
+    parser.add_argument('--plot', action='store_true', help='Plot results from existing model')
+    args = parser.parse_args()
+
+    if not args.train and not args.plot:
+        print("Please specify either --train or --plot")
+        return
+    
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
     # Initialize Model
     model = PINN().to(device)
-    
-    # Generate Data (Hammersley Sampling)
-    # Normalized between 0 and 1
-    # 4 dimensions: Energy, xi, x, t
-    print(f"Generating {pts} Hammersley points...")
-    raw_points = hammersley_sequence(pts, 4)
-    X_train = torch.tensor(raw_points, dtype=torch.float64, device=device)
-    
-    # Split columns
-    E_train  = X_train[:, 0:1]
-    xi_train = X_train[:, 1:2]
-    x_train  = X_train[:, 2:3]
-    t_train  = X_train[:, 3:4]
-    
-    # Loss lists
-    loss_history = []
-    TrainingLossPDE = []
-    StepsTraining = []
+    model_path = './model/model_pytorch.ckpt'
 
-    # -----------------------------------------
-    # Phase 1: SOAP Optimizer
-    # -----------------------------------------
-    print("Starting SOAP training...")
-    optimizer = pytorch_optimizer.optimizer.soap.SOAP(
-        model.parameters(), 
-        lr=lr, 
-        betas=(.999, .999), 
-        weight_decay=0e-2, 
-        precondition_frequency=1
-    )
-    # Using ExponentialLR as in EscapeTime.py logic
-    scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.999995) 
+    # --------------------------------------
+    # TRAINING
+    # --------------------------------------
+    if args.train:
+        # Generate Data (Hammersley Sampling)
+        # Normalized between 0 and 1
+        # 4 dimensions: Energy, xi, x, t
+        print(f"Generating {pts} Hammersley points...")
+        raw_points = hammersley_sequence(pts, 4)
+        X_train = torch.tensor(raw_points, dtype=torch.float64, device=device)
+    
+        # Split columns
+        E_train  = X_train[:, 0:1]
+        xi_train = X_train[:, 1:2]
+        x_train  = X_train[:, 2:3]
+        t_train  = X_train[:, 3:4]
+    
+        # Loss lists
+        loss_history = []
+        TrainingLossPDE = []
+        StepsTraining = []
 
-    model.train()
-    st_time = time.time()
+        # Phase 1: SOAP Optimizer
+        print("Starting SOAP training...")
+        optimizer = pytorch_optimizer.optimizer.soap.SOAP(
+            model.parameters(), 
+            lr=lr, 
+            betas=(.999, .999), 
+            weight_decay=0e-2, 
+            precondition_frequency=1
+        )
+        # Using ExponentialLR as in EscapeTime.py logic
+        scheduler = lr_scheduler.ExponentialLR(optimizer, gamma=0.999995) 
 
-    for epoch in range(epochsSOAP):
-        optimizer.zero_grad()
+        model.train()
+        st_time = time.time()
+
+        for epoch in range(epochsSOAP):
+            optimizer.zero_grad()
         
-        # Calculate Residual
-        loss = pinn_loss(model, E_train, xi_train, x_train, t_train)
-        loss.backward()
-        optimizer.step()
-        scheduler.step()
+            # Calculate Residual
+            loss = pinn_loss(model, E_train, xi_train, x_train, t_train)
+            loss.backward()
+            optimizer.step()
+            scheduler.step()
         
-        loss_val = loss.item()
-        loss_history.append(loss_val)
+            loss_val = loss.item()
+            loss_history.append(loss_val)
 
-        if epoch % 100 == 0:
-            print(f"SOAP Epoch {epoch}/{epochsSOAP}: Loss = {loss_val:.4e}")
+            if epoch % 100 == 0:
+                print(f"SOAP Epoch {epoch}/{epochsSOAP}: Loss = {loss_val:.4e}")
 
-    print(f"SOAP training finished. Time: {time.time()-st_time:.2f}s")
+        print(f"SOAP training finished. Time: {time.time()-st_time:.2f}s")
 
-    # -----------------------
-    # Phase 2: SSBroyden
-    # -----------------------
-    print("Starting SSBroyden training...")
-    # SSBroyden is a memory-optimized BFGS variant. L-BFGS-B is the closest standard SciPy equivalent.
-    fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train, epochsBFGS, 100)
+        # Phase 2: SSBroyden
+        print("Starting SSBroyden training...")
+        # SSBroyden is a memory-optimized BFGS variant. L-BFGS-B is the closest standard SciPy equivalent.
+        fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train, epochsBFGS, 100)
     
-    print("L-BFGS-B training finished.")
+        print("L-BFGS-B training finished.")
 
-    # -----------------------------------------
-    # Saving
-    # -----------------------------------------
-    os.makedirs('./model', exist_ok=True)
-    torch.save(model.state_dict(), './model/model_pytorch.ckpt')
-    np.savetxt('./model/loss_history.txt', np.array(loss_history))
+        # Saving
+        os.makedirs('./model', exist_ok=True)
+        torch.save(model.state_dict(), model_path)
+        np.savetxt('./model/loss_history.txt', np.array(loss_history))
+    
+        # Loss history
+        plt.figure()
+        plt.plot(loss_history)
+        plt.yscale('log')
+        plt.xlabel('Iterations')
+        plt.ylabel('Loss (MSE)')
+        plt.title('Training Loss History')
+        plt.savefig('./model/loss.png')
+        print("Model and plots saved.")
 
-    n_E_plot = 60
-    n_xi_plot = 70
-    n_x_plot = 80
-    n_t_plot = 90
-    EValsNorm = np.linspace(0, 1, n_E_plot, dtype=np.float64)
-    xiValsNorm = np.linspace(0, 1, n_xi_plot, dtype=np.float64)
-    xValsNorm = np.linspace(0, 1, n_x_plot, dtype=np.float64)
-    tValsNorm = np.linspace(0, 1, n_t_plot, dtype=np.float64)
 
-    xiNorm = xi_valNorm*np.ones(n_E_plot*n_xi_plot)
-    tNorm = t_valNorm*np.ones(n_E_plot*n_xi_plot)
-    EENorm, xixiNorm = np.meshgrid(EValsNorm, xiValsNorm, indexing="ij")
+    # -----------------------------------------------------
+    # PLOTTING
+    # -----------------------------------------------------
+    if args.plot:
+        print("Loading model for plotting...")
+        if not os.path.exists(model_path):
+            print(f"Error: Model file {model_path} not found. Run --train first.")
+            return
+            
+        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.eval()
+        
+        os.makedirs('./figures', exist_ok=True)
+        plt.rcParams.update({'font.size': 18})
+
+        # Grids definition matches PlotFPHotSpot.py logic
+        numE = 200
+        numxi = 150
+        numx = 100
+        
+        Energygrid = np.logspace(np.log10(EMin), np.log10(EMax), numE)
+        xigrid = np.linspace(xiMin, xiMax, numxi)
+        xgrid = np.linspace(xMin, xMax, numx)
+
+        # ------------------------------------------------------------------
+        # Plot 1: f(x, xi) at constant Energy and Time
+        # ------------------------------------------------------------------
+        print("Generating f(x, xi) contour...")
+        xinew, xnew = np.meshgrid(xigrid, xgrid) # shape (numx, numxi)
+        
+        # Flatten for prediction
+        flat_xi = xinew.ravel()
+        flat_x = xnew.ravel()
+        
+        # Normalize inputs
+        xi_in = (torch.tensor(flat_xi, device=device).unsqueeze(1) - xiMin) / (xiMax - xiMin)
+        x_in  = (torch.tensor(flat_x, device=device).unsqueeze(1) - xMin) / (xMax - xMin)
+        
+        # Constant inputs
+        E_in = torch.ones_like(xi_in) * E_valNorm
+        t_in = torch.ones_like(xi_in) * t_valNorm
+        
+        with torch.no_grad():
+            # Features
+            features = feature_transform(E_in, xi_in, x_in, t_in)
+            nn_out = model(features)
+            
+            # Physical coordinates for output transform
+            E_phys = torch.tensor(E_val, device=device).expand_as(E_in)
+            xi_phys = torch.tensor(flat_xi, device=device).unsqueeze(1)
+            x_phys = torch.tensor(flat_x, device=device).unsqueeze(1)
+            t_phys = torch.tensor(t_val, device=device).expand_as(E_in)
+            
+            fa_pred = output_transform(nn_out, E_phys, xi_phys, x_phys, t_phys)
+            
+        fxVsxinew = fa_pred.cpu().numpy().reshape(xinew.shape)
+
+        # Calculate Residual for this slice
+        # requires grad
+        with torch.enable_grad():
+            res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
+        # Note: fp_pde returns (scaling * residual). DeepXDE code often plots just residual?
+        # PlotFPHotSpot plots "residual of fa" but uses model.predict(operator=pde) which returns the loss form usually.
+        # We will plot the scaled residual (the actual loss contribution).
+        resnew = (scaling * res_tens).detach().cpu().numpy().reshape(xinew.shape)
+
+        # FIG 1: f_a(x, xi)
+        fig1, ax1 = plt.subplots(num=1, clear=True)
+        fig1.set_tight_layout(True)
+        cs1 = ax1.contourf(xgrid, xigrid, fxVsxinew.T, levels=50, cmap='jet')
+        fig1.colorbar(cs1, ax=ax1)
+        ax1.set_xlabel("$x$")
+        ax1.set_ylabel("$\\xi$")
+        ax1.set_title(f"$f_a$ (E={E_val}, t={t_val})")
+        fig1.savefig("./figures/fa_x_xi.png")
+
+        # FIG 2: Residual(x, xi)
+        fig2, ax2 = plt.subplots(num=2, clear=True)
+        fig2.set_tight_layout(True)
+        cs2 = ax2.contourf(xgrid, xigrid, resnew.T, 50, cmap='jet')
+        fig2.colorbar(cs2, ax=ax2)
+        ax2.set_xlabel("$x$")
+        ax2.set_ylabel("$\\xi$")
+        ax2.set_title("Residual")
+        fig2.savefig("./figures/residual_x_xi.png")
+
+        # ------------------------------------------------------------------
+        # Plot 2: f(E, xi) at constant x and Time
+        # ------------------------------------------------------------------
+        print("Generating f(E, xi) contour...")
+        Enew, xinew = np.meshgrid(Energygrid, xigrid) # shape (numxi, numE)
+        
+        flat_E = Enew.ravel()
+        flat_xi = xinew.ravel()
+        
+        E_in = (torch.tensor(flat_E, device=device).unsqueeze(1) - EMin) / (EMax - EMin)
+        xi_in = (torch.tensor(flat_xi, device=device).unsqueeze(1) - xiMin) / (xiMax - xiMin)
+        x_in = torch.ones_like(E_in) * x_valNorm
+        t_in = torch.ones_like(E_in) * t_valNorm
+        
+        with torch.no_grad():
+            features = feature_transform(E_in, xi_in, x_in, t_in)
+            nn_out = model(features)
+            
+            E_phys = torch.tensor(flat_E, device=device).unsqueeze(1)
+            xi_phys = torch.tensor(flat_xi, device=device).unsqueeze(1)
+            x_phys = torch.tensor(x_val, device=device).expand_as(E_in)
+            t_phys = torch.tensor(t_val, device=device).expand_as(E_in)
+            
+            fa_pred = output_transform(nn_out, E_phys, xi_phys, x_phys, t_phys)
+            
+        fEVsxinew = fa_pred.cpu().numpy().reshape(Enew.shape)
+        
+        # Calculate Maxwellian baseline for normalization (fMax)
+        # Replicating logic from PlotFPHotSpot:
+        # ne, nd, nt, Tprof calculated at x_val
+        ne_val = 1 + 0.5 * n1 * (2 + np.tanh((xleft - x_val) / Dx) + np.tanh((x_val - xright) / Dx))
+        nt_val = A * ne_val
+        Te_val = 1 / ne_val
+        
+        fMaxnew = nt_val / Te_val**1.5 * np.exp(-Enew / Te_val)
+        
+        # Residual for this slice
+        with torch.enable_grad():
+            res_tens, scaling = fp_pde(model, E_in, xi_in, x_in, t_in)
+        resExinew = (scaling * res_tens).detach().cpu().numpy().reshape(Enew.shape)
+
+        # FIG 3: fa / fMax
+        fig3, ax3 = plt.subplots(num=3, clear=True)
+        fig3.set_tight_layout(True)
+        # PlotFPHotSpot plots xinew.T vs Enew.T. Enew shape is (numxi, numE).
+        # We plot xi on x-axis, E on y-axis? 
+        # PlotFPHotSpot: ax3.set_xlabel("$\\xi$"), ax3.set_ylabel("$E/T_0$")
+        # And does contourf(xinew.T, Enew.T, ...). 
+        cs3 = ax3.contourf(xinew.T, Enew.T, fEVsxinew.T / fMaxnew.T, levels=50, cmap='jet')
+        fig3.colorbar(cs3, ax=ax3)
+        ax3.set_xlabel("$\\xi$")
+        ax3.set_ylabel("$E/T_0$")
+        ax3.set_title("$f_a/f^{Max}_a$")
+        fig3.savefig("./figures/ratio_xi_E.png")
+
+        # FIG 4: Residual(E, xi)
+        fig4, ax4 = plt.subplots(num=4, clear=True)
+        fig4.set_tight_layout(True)
+        cs4 = ax4.contourf(xinew.T, Enew.T, resExinew.T, 50, cmap='jet')
+        fig4.colorbar(cs4, ax=ax4)
+        ax4.set_xlabel("$\\xi$")
+        ax4.set_ylabel("$E/T_0$")
+        ax4.set_title("Residual (RPF)")
+        fig4.savefig("./figures/residual_xi_E.png")
+
+        # ------------------------------------------------------------------
+        # Plot 3: Average Energy Distribution <fa> vs E
+        # ------------------------------------------------------------------
+        print("Generating Average Energy Distribution...")
+        # Integrate fEVsxinew over xi (axis 0 of Enew/fEVsxinew which corresponds to xigrid)
+        # fEVsxinew shape is (numxi, numE)
+        # We integrate along axis 0 (xi)
+        fEnew = 0.5 * simps(fEVsxinew, xigrid, axis=0) # 0.5 factor from PlotFPHotSpot
+        
+        # Max dist at this location (independent of xi, so just take one slice)
+        fMax_1d = fMaxnew[0, :] 
+
+        # FIG 5: <fa> vs E
+        fig5, ax5 = plt.subplots(num=5, clear=True)
+        fig5.set_tight_layout(True)
+        ax5.plot(Energygrid, fEnew, label='<$f_a$>', linestyle='-', color='blue', linewidth=2)
+        ax5.plot(Energygrid, fMax_1d, label='$f^{Max}_a$', linestyle='--', color='blue', linewidth=2)
+        ax5.set_xlabel("$E/T_0$")
+        ax5.set_title("Average Energy Dist.")
+        ax5.set_yscale("log")
+        ax5.legend()
+        fig5.savefig("./figures/avg_energy_dist.png")
+
+        print("All plots saved to ./figures/")
+        plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     
-    # Loss history
-    plt.figure()
-    plt.plot(loss_history)
-    plt.yscale('log')
-    plt.xlabel('Iterations')
-    plt.ylabel('Loss (MSE)')
-    plt.title('Training Loss History')
-    plt.savefig('./model/loss.png')
-    print("Model and plots saved.")
-
 if __name__ == "__main__":
     main()
