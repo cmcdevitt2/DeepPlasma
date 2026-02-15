@@ -49,15 +49,15 @@ mt = 3   # tritium mass
 
 # Training Hyperparameters
 epochsSOAP = 25000
-epochsBFGS = 10000 # Max iter for SSBroyden/L-BFGS
+epochsBFGS = 5000 # Max iter for SSBroyden/L-BFGS
 lr = 1.e-3
-pts = 200000      # Number of training points
+pts = 500000      # Number of training points
 pts_test = 2*pts    # Number of test points
 batch_size = pts # Full batch
 InputDim = 5     # Feature transform results in 5 inputs: E, xi^2, x^2, x*xi, t
 
 # Plotting slice defaults
-E_val  = 8
+E_val  = 9
 xi_val = 0.8
 x_val  = 0
 t_val  = 0.5
@@ -527,7 +527,7 @@ def main():
         numxi = 150
         numx = 100
         
-        Energygrid = np.logspace(np.log10(EMin), np.log10(EMax), numE)
+        Energygrid = np.linspace(EMin, EMax, numE)
         xigrid = np.linspace(xiMin, xiMax, numxi)
         xgrid = np.linspace(xMin, xMax, numx)
 
