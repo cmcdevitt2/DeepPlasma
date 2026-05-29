@@ -1,6 +1,3 @@
-# Copy this file to .github/workflows/deploy-pages.yml at the repository root.
-# It builds demo/web and deploys it to GitHub Pages.
-
 name: Deploy PINN Demo to GitHub Pages
 
 on:
@@ -20,9 +17,13 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -37,6 +38,7 @@ jobs:
 
       - name: Copy models into web public folder
         run: |
+          rm -rf demo/web/public/models
           mkdir -p demo/web/public/models
           cp demo/models/*.onnx demo/web/public/models/
           cp demo/models/metadata.json demo/web/public/models/
@@ -45,16 +47,24 @@ jobs:
         working-directory: demo/web
         run: npm run build
 
+      - name: Assemble Pages artifact under /demo
+        run: |
+          mkdir -p _pages/demo
+          cp -R demo/web/dist/* _pages/demo/
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: demo/web/dist
+          path: _pages
 
   deploy:
     environment:
       name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     needs: build
+
     steps:
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
