@@ -1,0 +1,60 @@
+from pathlib import Path
+
+import numpy as np
+import onnxruntime as ort
+
+
+def numpy_dtype_from_ort_type(ort_type: str):
+    if ort_type == "tensor(float)":
+        return np.float32
+    if ort_type == "tensor(double)":
+        return np.float64
+    if ort_type == "tensor(float16)":
+        return np.float16
+
+    raise ValueError(f"Unsupported ONNX input type: {ort_type}")
+
+
+def main():
+    model_dir = Path(__file__).resolve().parents[1] / "models"
+
+    model_names = [
+        "lid_cavity_forward.onnx",
+        "lid_cavity_residual.onnx",
+    ]
+
+    for name in model_names:
+        path = model_dir / name
+
+        if not path.exists():
+            print(f"missing {path}")
+            continue
+
+        print(f"checking {path}")
+
+        sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+
+        input_info = sess.get_inputs()[0]
+        input_name = input_info.name
+        input_shape = input_info.shape
+        input_type = input_info.type
+
+        dtype = numpy_dtype_from_ort_type(input_type)
+
+        print("input:", input_name, input_shape, input_type)
+        print("outputs:", [(o.name, o.shape, o.type) for o in sess.get_outputs()])
+
+        x = np.random.rand(128, 5).astype(dtype)
+        outputs = sess.run(None, {input_name: x})
+
+        for i, y in enumerate(outputs):
+            print(
+                f"output[{i}] shape={y.shape} dtype={y.dtype} "
+                f"finite={np.isfinite(y).all()}"
+            )
+
+        print("ok\n")
+
+
+if __name__ == "__main__":
+    main()

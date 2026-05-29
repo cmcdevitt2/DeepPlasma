@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Parametric Lid-Driven Cavity PINN</title>
+    <style>
+      :root { color-scheme: light; }
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 24px;
+        background: #f7f7f7;
+        color: #222;
+      }
+      h1 { margin-bottom: 8px; }
+      code { background: #eee; padding: 2px 4px; border-radius: 4px; }
+      .controls {
+        display: grid;
+        grid-template-columns: 110px minmax(220px, 360px) 90px;
+        gap: 10px;
+        align-items: center;
+        margin: 20px 0;
+        max-width: 620px;
+      }
+      .controls label { font-weight: 650; }
+      select, input { width: 100%; }
+      .status, #residualStats {
+        margin: 12px 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 14px;
+      }
+      .plots {
+        display: flex;
+        gap: 24px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+      }
+      .plot-card {
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        padding: 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      }
+      .plot-card h2 { margin: 0 0 8px 0; font-size: 18px; }
+      canvas {
+        width: 512px;
+        height: 512px;
+        image-rendering: pixelated;
+        border: 1px solid #999;
+        background: black;
+      }
+      .small { color: #555; max-width: 1100px; line-height: 1.45; }
+    </style>
+  </head>
+  <body>
+    <h1>Parametric Lid-Driven Cavity PINN</h1>
+    <p class="small">
+      Browser-native ONNX Runtime WebGPU demo for a parametric trapped/lid-driven cavity PINN.
+      Inputs are <code>(x, y, ReNorm, DNorm, triNorm)</code>. Sliders show physical values.
+    </p>
+
+    <div class="controls">
+      <label for="nx">nx</label>
+      <input id="nx" type="range" min="16" max="256" value="96" step="16" />
+      <span id="nxValue">96</span>
+
+      <label for="ny">ny</label>
+      <input id="ny" type="range" min="16" max="256" value="96" step="16" />
+      <span id="nyValue">96</span>
+
+      <label for="re">Re</label>
+      <input id="re" type="range" min="900" max="1100" value="1000" step="1" />
+      <span id="reValue">1000</span>
+
+      <label for="depth">D</label>
+      <input id="depth" type="range" min="1.9" max="3.3" value="2.6" step="0.01" />
+      <span id="depthValue">2.60</span>
+
+      <label for="tri">tri</label>
+      <input id="tri" type="range" min="0" max="0.01" value="0.005" step="0.0001" />
+      <span id="triValue">0.0050</span>
+
+      <label for="solutionField">solution field</label>
+      <select id="solutionField">
+        <option value="speed" selected>speed |u|</option>
+        <option value="u">u velocity</option>
+        <option value="v">v velocity</option>
+        <option value="p">pressure p</option>
+      </select>
+      <span></span>
+
+      <label for="residualField">residual field</label>
+      <select id="residualField">
+        <option value="rmag" selected>|R| momentum</option>
+        <option value="ru">R_u weighted</option>
+        <option value="rv">R_v weighted</option>
+      </select>
+      <span></span>
+    </div>
+
+    <p id="status" class="status">Loading ONNX models...</p>
+    <p id="residualStats">Residual: waiting for inference...</p>
+
+    <div class="plots">
+      <div class="plot-card">
+        <h2 id="solutionTitle">Predicted solution</h2>
+        <canvas id="solutionCanvas"></canvas>
+      </div>
+
+      <div class="plot-card">
+        <h2 id="residualTitle">PDE residual</h2>
+        <canvas id="residualCanvas"></canvas>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
