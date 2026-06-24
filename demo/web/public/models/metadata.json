@@ -1,0 +1,85 @@
+{
+  "id": "lid_cavity_trap_re_depth_tri_v1",
+  "name": "Parametric trapped lid-driven cavity PINN",
+  "equations": {
+    "momentum_x": "u u_x + (v/D) u_y - (1/Re)(u_xx + u_yy/D^2) + p_x = 0",
+    "momentum_y": "u v_x + (v/D) v_y - (1/Re)(v_xx + v_yy/D^2) + p_y/D = 0",
+    "continuity": "enforced by streamfunction ansatz"
+  },
+  "inputs": [
+    "x",
+    "y",
+    "ReNorm",
+    "DNorm",
+    "triNorm"
+  ],
+  "forward_outputs": [
+    "u",
+    "v",
+    "p",
+    "speed"
+  ],
+  "residual_outputs": [
+    "Ru_weighted",
+    "Rv_weighted",
+    "Rmag_weighted"
+  ],
+  "parameter_ranges": {
+    "x": [
+      0.0,
+      1.0
+    ],
+    "y": [
+      0.0,
+      1.0
+    ],
+    "Re": [
+      900.0,
+      1100.0
+    ],
+    "D": [
+      1.9,
+      3.3
+    ],
+    "tri": [
+      0.0,
+      0.01
+    ]
+  },
+  "models": {
+    "forward": "lid_cavity_forward.onnx",
+    "residual": "lid_cavity_residual.onnx"
+  },
+  "training_args": {
+    "seed": 1234,
+    "width": 24,
+    "depth": 4,
+    "n_pde": 4096,
+    "sampling": "random",
+    "adam_steps": 1000,
+    "adam_lr": 0.0005,
+    "resample_every": 100,
+    "print_every": 100,
+    "ssb_total_iters": 0,
+    "ssb_block_iters": 100,
+    "ssb_gtol": 1e-10,
+    "ssb_reset_h_on_resample": false,
+    "outdir": "/blue/cmcdevitt/j.arnaud/git_home/DeepPlasma/Demo_LDC/demo/models",
+    "export_onnx": true,
+    "resume": null
+  },
+  "config": {
+    "re_min": 900.0,
+    "re_max": 1100.0,
+    "d_min": 1.9,
+    "d_max": 3.3,
+    "tri_min": 0.0,
+    "tri_max": 0.01,
+    "dx": 0.03162277660168379,
+    "dy": 0.1,
+    "input_dim": 5,
+    "raw_output_dim": 2
+  },
+  "recommended_execution_provider": "webgpu",
+  "fallback_execution_provider": "wasm"
+}
