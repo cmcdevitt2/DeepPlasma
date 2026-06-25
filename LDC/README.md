@@ -19,19 +19,10 @@ We install PyTorch and all dependencies together, pointing to the CUDA 12.4 whee
 
 ```bash
 pip install --upgrade pip
-pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu124
+pip install torch torchvision torchaudio matplotlib pytorch-optimizer scikit-optimize tqdm
 ```
 
 ### 3. Running the Code
-Before running the simulation, create the required output directories inside the project folder:
-
-```bash
-mkdir figures
-mkdir model
-```
-
-Run the script:
-
 ```bash
 python LDC_module_square.py
 ```
