@@ -17,29 +17,19 @@ sheathbool = True #Turns off/on sheath entrance calculations as well as graphs t
 import time
 import sys
 
-#save_path = '/blue/cmcdevitt/ewebb2/Sheath/models/'+name+'/'
 
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2024-10-24-12:42:46/'
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2024-01-31-18:12:29/'
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2024-02-14-18:21:07/'
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2024-02-15-15:50:19/'
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2024-02-16-12:50:30/'
-#Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/2025-02-03-11:40:36/'
-Data_path = '/blue/cmcdevitt/ewebb2/Sheath/models/3001/'
-save_path = '/blue/cmcdevitt/ewebb2/Sheath/models/3001/Figures/'
+Data_path = 'path/to/NN model/ and data/'
+save_path = 'path/where/figures/save'
 
-#Best L-BFGS: /blue/cmcdevitt/ewebb2/Sheath/models/2025-02-03-11:40:36/
-
+#make sure to update the number in ckpt_save_path to match the model you want to load.
 ckpt_save_path = Data_path + "model.pt-45000.pt"
 
-#soln = np.loadtxt('./data/solutionAnalytic0_fine.dat')
+#load information from files
 soln = np.loadtxt(Data_path + 'data/solution0_fine.dat')
 trainpts = np.loadtxt(Data_path + 'data/train.dat')
 loss = np.loadtxt(Data_path + 'data/loss.dat')
-#soln = np.loadtxt('./ArchiveData/40DebyeHydrogenJune13_2022/solution0_fine.dat')
-#trainpts = np.loadtxt('./ArchiveData/40DebyeHydrogenJune13_2022/train.dat')
-#loss = np.loadtxt('./ArchiveData/40DebyeHydrogenJune13_2022/loss.dat')
 
+#set default precision to float64
 dde.config.set_default_float("float64")
 
 numxpts = 1000 # only used when model is loaded
@@ -56,8 +46,6 @@ q = 1.602e-19 #Charge of electron C
 E0 = 8.8542e-12 #permittivity of free space F/m
 Einf = 13.6
 
-#KnudNeutralMin = 0 # collisionality parameters for ion-neutral collisions
-#KnudNeutralMax = 3e-1
 MiMeMin = 1*1836
 MiMeMax = 40*1836
 TiTeMin = 0
@@ -68,27 +56,22 @@ KnudMin = 0 # collisionality parameters for ion-neutral collisions
 KnudMax = 3e-1
 
 # Choose values to evaluate
-#KnudNeutralVal1 = 3e-1 #Pressure = 10^4
 MiMeVal1 = 1836
 TiTeVal1 = TiTeMin
 KnudVal1 = 0
 
-#KnudNeutralVal2 = 7e-2 #Pressure = 10^3
 MiMeVal2 = 40*1836
 TiTeVal2 = TiTeMin
 KnudVal2 = 0
 
-#KnudNeutralVal3 = 1e-2 #Pressure = 10^2
 MiMeVal3 = 1836
 TiTeVal3 = TiTeMin
 KnudVal3 = 3e-1
 
-#KnudNeutralVal4 = 1.5e-3 #Pressure = 10^1
 MiMeVal4 = 40*1836
 TiTeVal4 = TiTeMin
 KnudVal4 = 3e-1
 
-#KnudNeutralVal5 = 1.5e-4 #Pressure = 10^0
 """MiMeVal5 = AtomicMass*1836
 TiTeVal5 = TiTeMin
 KnudVal5 = 1.5e-4
@@ -101,19 +84,19 @@ KnudNumVec = np.array([KnudVal1,KnudVal2,KnudVal3,KnudVal4])
 MiMeVec = np.array([MiMeVal1,MiMeVal2,MiMeVal3,MiMeVal4])
 TiTeVec = np.array([TiTeVal1,TiTeVal2,TiTeVal3,TiTeVal4])
 
+#T and Ez in eV
 def Sion(T,Ez): 
-    return 1e-11 * ( (T/Ez)**(1/2) ) / ( (Ez)**(3/2)*(6.0+T/Ez) ) * np.exp(-Ez/T) 
+    #Fit to ionization rate from NRL formulary
+    return 1e-11 * ( (T/Ez)**(1/2) ) / ( (Ez)**(3/2)*(6.0+T/Ez) ) * np.exp(-Ez/T) #m^3/s
 
 def Srecom(T,Ez,Z):
+    #Fit to recombination rate from NRL formulary
     return 5.2e-20 * Z * (Ez/T)**(1/2) * ( 0.43 + 1/2*np.log(Ez/T) + 0.469*(Ez/T)**(-1.3) ) #m^3/s
-
-#Parameters
-Tref = 1 #eV
 
 #normalizations
 Tref = 1 #eV
 
-niMax =	10 # maximum density allowed
+niMax =	10 # maximum normalized density allowed
 
 interiorpts = [2,2]
 
@@ -127,22 +110,14 @@ trainloss = loss[:,1]
 trainloss = trainloss + loss[:,2]
 #trainloss += loss[:,3]
 #trainloss += loss[:,4]
-#trainloss += loss[:,5]
-#trainloss += loss[:,6]
-#trainloss += loss[:,7]
+
 
 testloss = loss[:,3]
 testloss = testloss + loss[:,4]
 #testloss += loss[:,6]
 #testloss += loss[:,7]
-#testloss += loss[:,10]
-#testloss += loss[:,13]
-#testloss += loss[:,14]
-#testloss += loss[:,15]
 
-#C = dde.Variable(-1.0,dtype='float64')
-#nT = tf.Variable(C, dtype='float64', trainable=True)
-
+#Build the *exact* same network structure as was used to train the model.
 def feature_transform(inputs):
     xNorm, MiMeNorm,TiTeNorm,KnudNorm = inputs[:,0:1], inputs[:,1:2], inputs[:,2:3],inputs[:,3:4]
     #xNorm, MiMeNorm,TiTeNorm= inputs[:,0:1], inputs[:,1:2], inputs[:,2:3]
@@ -175,15 +150,11 @@ def pde(inputs, outputs):
     FluxAtWall = 1
     uewall = torch.sqrt(MiMe/(2*np.pi))
     ne = FluxAtWall/uewall*torch.exp(phi)
-    #ue = Source_int / ne
     ui = Source_int / ni
     
     dphi_x = dde.grad.jacobian(outputs, inputs, i=0, j=0) / (xMax-xMin)
     dphi_xx = dde.grad.hessian(outputs, inputs, component=0, i=0, j=0) / (xMax-xMin)**2
     dni_x = dde.grad.jacobian(outputs, inputs, i=1, j=0) / (xMax-xMin)
-    
-    #dne_x = dde.grad.jacobian(ne, inputs, i=0, j=0) / (xMax-xMin)
-    #due_x = dde.grad.jacobian(ue, inputs, i=0, j=0) / (xMax-xMin)
     dui_x = dde.grad.jacobian(ui, inputs, i=0, j=0) / (xMax-xMin)
     
     lossb1 = dphi_xx - (ne - ni) # Poisson
@@ -201,6 +172,7 @@ net = dde.maps.FNN([4]+[32]*4+[2], "tanh", "Glorot normal")
 net.apply_feature_transform(feature_transform)
 net.apply_output_transform(output_transform)
 
+#don't need training points to load the model
 data = dde.data.PDE(
     geom,
     pde,
@@ -215,27 +187,33 @@ loss_weights = [1,1]
 lossE = ["MSE"] * 2
 
 model = dde.Model(data, net)
-model.compile("SSBroyden")#,external_trainable_variables=Tewall)
-#variable = dde.callbacks.VariableValue(Tewall, period=1000)
+model.compile("SSBroyden")
+
+#Restore model weights from checkpoint file.
 model.restore(save_path = ckpt_save_path, verbose=1)
-#nw = variable.get_value()
-#nwall = niMax*0.5*(1+np.tanh(nw))
+
 
 xpts = np.linspace(0,1,numxpts)
 
 def xnom(x):
+    #Scale x to [0,1] for input to the neural network
     return (x - xMin) / (xMax-xMin)
 
 def pred(xVal,MiMe,TiTe,Knud):
+    #Scale inputs to [0,1] for input to the neural network
+    #xVal is already scaled to [0,1] for input to the neural network
     MiMeNorm = (MiMe - MiMeMin ) / ( MiMeMax - MiMeMin )
     TiTeNorm = (TiTe-TiTeMin) / (TiTeMax-TiTeMin) 
     KnudNorm = (Knud - KnudMin) / (KnudMax - KnudMin)
     x = xMin + (xMax-xMin)*xVal
+    #Build input array 
     X2 = np.zeros([len(xVal),4])
     X2[:,0] = xVal
     X2[:,1] = MiMeNorm
     X2[:,2] = TiTeNorm
     X2[:,3] = KnudNorm
+    #Predict profiles at given inputs
+    #Inputs can be a single point or an array of points
     y2 = model.predict(X2)
 
     uewall = np.sqrt(MiMe/(2*np.pi))
@@ -249,6 +227,7 @@ def pred(xVal,MiMe,TiTe,Knud):
     return phi,ni,ne,ui,ue
 
 def pred1(xVal,MiMe,TiTe,Knud):
+    #xVal is a normalized value [0,L], so this version of the function scales it to [0,1] for input.
     MiMeNorm = (MiMe - MiMeMin ) / ( MiMeMax - MiMeMin )
     TiTeNorm = (TiTe-TiTeMin) / (TiTeMax-TiTeMin) 
     KnudNorm = (Knud - KnudMin) / (KnudMax - KnudMin)
@@ -262,7 +241,6 @@ def pred1(xVal,MiMe,TiTe,Knud):
 
     uewall = np.sqrt(MiMe/(2*np.pi))
 
-    #x = xMin + (xMax-xMin)*xpts
     phi = y2[:,0]
     ni = y2[:,1]
     ne = 1/uewall*np.exp(phi)
@@ -271,33 +249,31 @@ def pred1(xVal,MiMe,TiTe,Knud):
 
     return phi,ni,ne,ui,ue
 
-"""sampler = qmc.Sobol(d=4, scramble=True)
-points = sampler.random(2e5)
-y2 = model.predict(points,operator=pde)
-poisson_test = y2[:,0]
-ionmom_test = y2[:,1]"""
-
 def Prhho(xVal,MiMeVal,TiTeVal,KnudVal):
     phi, ni, ne, ui, ue = pred1(xVal,MiMeVal,TiTeVal,KnudVal)
 
     return ui - 1
 
-
+#predicts the sheath entrance according to the Bohm criteria, where ui = 1
 sol = optimize.root(Prhho, [L-5], args = (MiMeVal1,TiTeVal1,KnudVal1))
 xSE1 = sol.x
 print("sheath entrance = " + str(xSE1))
 
+#predicts the space charge at the predicted sheath entrance, which is Langmiur's definition of the sheath entrance.
 phiSE5, niSE5, neSE5, uiSE5, ueSE5 = pred1(xSE1,MiMeVal1,TiTeVal1,KnudVal1)
 pp = (niSE5-neSE5)/neSE5
 print("Phro:", pp)
 
+#This amount of space charge is used to define the sheath entrance across all parameters
 Prho = pp
 
+#Predicts the sheath entrance according to the Langmuir definition, where (ni-ne)/ne = Prho
 def SheathEntrance(xVal,MiMeVal,TiTeVal,KnudVal):
     phi, ni, ne, ui, ue = pred1(xVal,MiMeVal,TiTeVal,KnudVal)
 
     return (ni-ne) / ne - Prho
 
+#Build other input parameters arrays to sample points from 
 numKnudpts = 50
 numMiMepts = 40
 numTiTepts = 10
@@ -315,13 +291,13 @@ niSEvec = np.zeros([numMiMepts, numTiTepts,numKnudpts])
 KnSEvec = np.zeros([numMiMepts, numTiTepts,numKnudpts])
 #print(np.shape(phiSEvec))
 
-
 phiList = []
 neList = []
 niList = []
 ueList = []
 uiList = []
-    
+
+#predict the profiles at the given parameters
 phi, ni, ne, ui, ue = pred(xpts,MiMeVal1,TiTeVal1,KnudVal1)
 
 phiList.append(phi)
@@ -426,6 +402,7 @@ if sheathbool == True:
     #phiSE5, niSE5, neSE5, uiSE5, ueSE5 = pred1(xSE5,MiMeVal5,TiTeVal5,KnudVal5)
     #phiSE6, niSE6, neSE6, uiSE6, ueSE6 = pred1(xSE6,MiMeVal6,TiTeVal6,KnudVal6)
 
+    #Build sheath profiles as a function of mass ratio, temperature ratio, and Knudsen number at the sheath entrance, center, and wall
     X = np.zeros([1,4])
     for i in range(0,numMiMepts):
         for j in range(0,numTiTepts):  
@@ -449,35 +426,11 @@ if sheathbool == True:
 
 np.savetxt(save_path + "phiSE.txt", phiSEvec[:,:,0])
 
-"""uiList = []
-for i in range(5):
-    uiList.append( neList[i] * ueList[i] / niList[i])"""
-
-"""MiMeNorm = (MiMeVal5 - MiMeMin ) / ( MiMeMax - MiMeMin )
-TiTeNorm = (TiTeVal5-TiTeMin) / (TiTeMax-TiTeMin) 
-#x = (xVal-xMin)/(xMax-xMin)
-X2 = np.zeros([numxpts,3])
-X2[:,0] = xpts
-X2[:,1] = MiMeNorm
-X2[:,2] = TiTeNorm
-y2 = model.predict(X2)
-
-uewall = np.sqrt(MiMeVal5/(2*np.pi))
-
-phit = y2[:,0]
-nit = y2[:,1]
-net = special.erf(L/sigma)/uewall*np.exp(phi)
-uit = special.erf(xpts/sigma)/ni
-uet = special.erf(xpts/sigma)/ne"""
-
-#0 - Argon at 0 Ti/Te | xSE1 | 0 Knud
-#1 - Hydrogen at 0 Ti/Te | xSE2 | 1e-2 Knud
-#2 - Hydrogen at 0 Ti/Te | xSE3 | 0.3 Knud
-#3 - Hydrogen at 0 Ti/Te | xSE4 | 0.07 Knud
-#4 - Hydrogen at 0 Ti/Te | xSE5 #Corresponds to Bohm criterion | 0 Knud
-#5 - Hydrogen at 1 Ti/Te | xSE6 | 0.3 Knud
-
 ptsize= 100
+
+#--------------------------
+#         Plots
+#--------------------------
 
 plt.rcParams.update({'font.size': 16})
 xpts = np.linspace(0,L,numxpts)
@@ -486,16 +439,12 @@ fig1.set_tight_layout(True)
 
 phi = phiList[0]
 ne = neList[0]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='black',linewidth=2)
-#ax1.plot((xSE1-L)/np.sqrt(ne[0]), phiSE1-phi[-1],'ok',linewidth=2)
 ax1.plot((xpts), phi, label='Hydrogen', linestyle='-',color='r',linewidth=3)
 if sheathbool == True:
     ax1.scatter((xSE1), phiSE1,c='r',s=ptsize,zorder=10)
 
 phi = phiList[1]
 ne = neList[1]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='red',linewidth=2)
-#ax1.plot((xSE2-L)/np.sqrt(ne[0]), phiSE2-phi[-1],'or',linewidth=2)
 ax1.plot((xpts), phi, label='Argon', linestyle='-',color='b',linewidth=3)
 if sheathbool == True:
     ax1.scatter((xSE2), phiSE2,c='b',s=ptsize,zorder=10)
@@ -828,6 +777,8 @@ FluxAtWall = 1
 #ue = Source_int / ne
 #ui = Source_int / ni
 
+#RK45 algorithm
+#Uses PINN predictions as initial conditions to verify PINN solved the equations
 def runge(MiMe, Knud):
     #MiMe = 1836
     #Te = 1
@@ -856,7 +807,7 @@ def runge(MiMe, Knud):
     philist = [phi0]
     Elist = [E0]
     uilist = [ui0]
-
+    #If the simulation goes past 50.1 Debye lengths, it finishes.
     qwerk = scipy.integrate.RK45(system,x0,[phi0,E0,ui0],50.1,rtol = 1e-12, atol = 1e-30)
     while qwerk.status == 'running' and qwerk.y[0] > 0:
         qwerk.step()
@@ -878,6 +829,7 @@ uiRKlist = []
 ueRKlist = []
 niRKlist = []
 
+#predict RK profiles
 xl, phi, ui, E, ue, ne, ni = runge(1836,0)
 phiRKlist.append(phi)
 neRKlist.append(ne)
@@ -1173,6 +1125,7 @@ ax37.set_xlabel('$\\lambda_{De}$')
 fig37.savefig(save_path + "ueRK5.png")
 plt.close()"""
 
+#Build input arrays to investigate derived quantities from RK solver
 numMiMepts = 20
 numKnudpts = 40
 MiMeScan = np.linspace(MiMeMin,MiMeMax,numMiMepts)
@@ -1191,24 +1144,24 @@ xSEvecRK = np.zeros([numMiMepts,numKnudpts])
 
 #sheathxx = []
 
+#find the sheath entrance for the RK solutions
 def sheathedge(MiMe,Knud,x):
     xl, phi, ui, E, ue, ne, ni = runge(MiMe,Knud)
-    #print("x=",x[0])
+
     initguess = np.array([x[0] for i in range(len(xl))])
     sheathx = np.where(np.isclose(xl,initguess,rtol=5e-4,atol=1e-6))[0][0]
-    #print("heat",sheathx)
-    #print(xl[sheathx])
-    #sheathxx.append(sheathx)
+
     dif = []
     dif.append((ni[sheathx]-ne[sheathx]) / ne[sheathx])
     
-    #dif = np.abs((ni[sheathx:]-ne[sheathx:]) / ne[sheathx:] - Prho)
+
     np.savetxt(save_path + "dif.txt", dif)
-    #sheathenter = np.where(min(dif)==dif)[0][0]
+
     return xl, phi, ui, E, ue, ne, ni,sheathx
 
 counts = 0
 
+#predict the profiles as a function of mass ratio and Knudsen number at calculated sheath entrance
 for i in range(numMiMepts):
         for k in range(numKnudpts):
             sol = optimize.root(SheathEntrance, [L-5], args = (MiMeScan[i],0,KnudScan[k]))
@@ -1315,6 +1268,7 @@ ax43.set_title("Potential Drop [$e\\phi/T$]")
 #ax8.legend()
 fig43.savefig(save_path + "Potential_DropTiRK.png")
 
+#Adjust the sound speed as a function of temperature ratio
 def realCs(ui, Ti):
     real = []
     for i in range(len(ui)):
