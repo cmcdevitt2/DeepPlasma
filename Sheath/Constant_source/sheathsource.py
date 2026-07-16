@@ -8,6 +8,7 @@ import sys
 
 save_path = '/path/to/models/'
 
+#Set default precision to float64, fix random seed for reproducibility, and set L-BFGS options
 dde.config.set_default_float("float64")
 dde.config.set_random_seed(1234)
 dde.optimizers.set_LBFGS_options(maxiter=5000)
