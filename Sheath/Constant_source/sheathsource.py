@@ -43,15 +43,6 @@ q = 1.602e-19 #C
 #permittivity of free space
 Eps0 = 8.85e-12 #F/m
 
-#T and Ez in eV
-def Sion(T,Ez): 
-    #Fit to ionization rate from NRL formulary
-    return 1e-11 * ( (T/Ez)**(1/2) ) / ( (Ez)**(3/2)*(6.0+T/Ez) ) * np.exp(-Ez/T) #m^3/s
-
-def Srecom(T,Ez,Z):
-    #Fit to recombination rate from NRL formulary
-    return 5.2e-20 * Z * (Ez/T)**(1/2) * ( 0.43 + 1/2*np.log(Ez/T) + 0.469*(Ez/T)**(-1.3) ) #m^3/s 
-
 def save_solution(geom, model, filename):
     x = geom.uniform_points(40**3)
     y_pred = model.predict(x)
