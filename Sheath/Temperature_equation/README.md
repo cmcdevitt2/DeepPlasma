@@ -1,7 +1,7 @@
-# Constant Source 
+# Temperature Equation 
 
 ## Description
-This describes the first model, which assumes there is a constant source and that the temperature is constant. We then assume electrons follow a Boltzmann distribution. The network is only solving for the electric potential and ion density
+This describes the third model, which assumes there is a constant source. We can no longer assume the electrons follow a Boltzmann distribution. The outputs are potential, ion density, electron velocity, and electron temperature.
 
 ## Prerequisites
 * **Python 3.10**
@@ -34,16 +34,16 @@ cp _minimize.py env/lib/python3.10/site-packages/scipy/optimize/
 '''
 
 ### 4. Running the Code
-Before running, update the "save_path" and "Data_path" variables in both sheathsource.py and Plotsheathsource.py to reflect desired output directories and location of the saved model.
+Before running, update the "save_path" and "Data_path" variables in both sheathheat.py and Plotsheathheat.py to reflect desired output directories and location of the saved model.
 
 Run the script:
 
 '''bash
-python sheathsource.py
+python sheathheat.py
 '''
 
 Plot results:
 
 '''bash
-python Plotsheathsource.py
+python Plotsheathheat.py
 '''
