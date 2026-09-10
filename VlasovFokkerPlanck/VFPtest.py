@@ -11,6 +11,9 @@ import time
 import argparse
 from scipy.integrate import simpson
 
+#NEW SSBROYDEN GPU IMPLEMENTATION, FROM ../LDC/LDC_module_square.py
+from ssbroyden import SSBroyden2
+
 # Set seeds and precision
 torch.manual_seed(1234)
 np.random.seed(1234)
@@ -388,18 +391,23 @@ def main():
     parser = argparse.ArgumentParser(description='PINN Training and Plotting')
     parser.add_argument('--train', action='store_true', help='Train a new model')
     parser.add_argument('--plot', action='store_true', help='Plot results from existing model')
+    parser.add_argument('--optimizer', choices=['gpu', 'cpu'], default='gpu',
+                         help='Phase 2 optimizer: gpu = native torch SSBroyden2 (GPU-resident), '
+                              'cpu = scipy-wrapped BFGS/SSBroyden (CPU round-trip each iteration). '
+                              'Also tags output filenames so gpu/cpu runs can share a directory '
+                              'without clobbering each other (e.g. for a parallel timing comparison).')
     args = parser.parse_args()
 
     if not args.train and not args.plot:
         print("Please specify either --train or --plot")
         return
-    
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
 
     # Initialize Model
     model = PINN().to(device)
-    model_path = './model/model_pytorch.ckpt'
+    model_path = f'./model/model_pytorch_{args.optimizer}.ckpt'
 
     # --------------------------------------
     # TRAINING
@@ -477,19 +485,56 @@ def main():
         # Phase 2: SSBroyden
         ####################
         print("Starting SSBroyden training...")
-        fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train, 
-                   E_test, xi_test, x_test, t_test, # Pass test data
-                   epochsBFGS, 100, 
-                   loss_history, steps_history, test_loss_history, # Pass test list
-                   global_step_start=epochsSOAP)    
-        print("L-BFGS-B training finished.")
+        st_time2 = time.time()
+
+        if args.optimizer == 'gpu':
+            opt_ssb = SSBroyden2(model.parameters(), lr=1.0, gtol=1e-10, xrtol=0.0,
+                                 dtype=torch.float64, device=device)
+
+            closure_call_count = [0]
+
+            def closure():
+                closure_call_count[0] += 1
+                opt_ssb.zero_grad(set_to_none=True)
+                loss = pinn_loss(model, E_train, xi_train, x_train, t_train)
+                loss.backward()
+                return loss
+
+            for k in range(epochsBFGS):
+                loss = opt_ssb.step(closure)
+                if k % 100 == 0:
+                    # training loss
+                    loss_val = loss.item()
+                    loss_history.append(loss_val)
+                    steps_history.append(epochsSOAP + k) # Track every step
+
+                    # test loss
+                    test_loss_val = compute_test_loss(model, E_test, xi_test, x_test, t_test)
+                    test_loss_history.append(test_loss_val)
+
+                    print(f"SSBroyden Epoch {k}/{epochsBFGS}: Train = {loss_val:.4e}, Test = {test_loss_val:.4e}")
+
+            print(f"GPU closure calls: {closure_call_count[0]} over {epochsBFGS} steps, "
+                  f"avg calls/step = {closure_call_count[0]/epochsBFGS:.4f}")
+
+        else:
+            res_bfgs = fit_lbfgsb(model, pinn_loss, E_train, xi_train, x_train, t_train,
+                    E_test, xi_test, x_test, t_test, # Pass test data
+                    epochsBFGS, 100,
+                    loss_history, steps_history, test_loss_history, # Pass test list
+                    global_step_start=epochsSOAP)
+            print("L-BFGS-B training finished.")
+            print(f"CPU nfev={res_bfgs.nfev} nit={res_bfgs.nit} "
+                  f"avg calls/step = {res_bfgs.nfev/max(1,res_bfgs.nit):.4f}")
+
+        print(f"Phase 2 ({args.optimizer}) optimizer time: {time.time()-st_time2:.2f}s")
 
         # Saving
         os.makedirs('./model', exist_ok=True)
         torch.save(model.state_dict(), model_path)
-        np.savetxt('./model/loss_history.txt', np.array(loss_history))
-        np.savetxt('./model/test_loss_history.txt', np.array(test_loss_history))
-        np.savetxt('./model/steps_history.txt', np.array(steps_history))
+        np.savetxt(f'./model/loss_history_{args.optimizer}.txt', np.array(loss_history))
+        np.savetxt(f'./model/test_loss_history_{args.optimizer}.txt', np.array(test_loss_history))
+        np.savetxt(f'./model/steps_history_{args.optimizer}.txt', np.array(steps_history))
 
         # Loss history
         fig_loss, ax_loss = plt.subplots()
@@ -503,7 +548,7 @@ def main():
         #ax_loss.set_title('Training Loss History')
         ax_loss.legend()
         
-        fig_loss.savefig('./model/loss.png')
+        fig_loss.savefig(f'./model/loss_{args.optimizer}.png')
         print("Model and plots saved.")
 
 
