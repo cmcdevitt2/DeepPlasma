@@ -393,9 +393,7 @@ def main():
     parser.add_argument('--plot', action='store_true', help='Plot results from existing model')
     parser.add_argument('--optimizer', choices=['gpu', 'cpu'], default='gpu',
                          help='Phase 2 optimizer: gpu = native torch SSBroyden2 (GPU-resident), '
-                              'cpu = scipy-wrapped BFGS/SSBroyden (CPU round-trip each iteration). '
-                              'Also tags output filenames so gpu/cpu runs can share a directory '
-                              'without clobbering each other (e.g. for a parallel timing comparison).')
+                              'cpu = scipy-wrapped BFGS/SSBroyden (CPU round-trip each iteration).')
     args = parser.parse_args()
 
     if not args.train and not args.plot:
@@ -407,7 +405,7 @@ def main():
 
     # Initialize Model
     model = PINN().to(device)
-    model_path = f'./model/model_pytorch_{args.optimizer}.ckpt'
+    model_path = './model/model_pytorch.ckpt'
 
     # --------------------------------------
     # TRAINING
@@ -532,9 +530,9 @@ def main():
         # Saving
         os.makedirs('./model', exist_ok=True)
         torch.save(model.state_dict(), model_path)
-        np.savetxt(f'./model/loss_history_{args.optimizer}.txt', np.array(loss_history))
-        np.savetxt(f'./model/test_loss_history_{args.optimizer}.txt', np.array(test_loss_history))
-        np.savetxt(f'./model/steps_history_{args.optimizer}.txt', np.array(steps_history))
+        np.savetxt('./model/loss_history.txt', np.array(loss_history))
+        np.savetxt('./model/test_loss_history.txt', np.array(test_loss_history))
+        np.savetxt('./model/steps_history.txt', np.array(steps_history))
 
         # Loss history
         fig_loss, ax_loss = plt.subplots()
@@ -548,7 +546,7 @@ def main():
         #ax_loss.set_title('Training Loss History')
         ax_loss.legend()
         
-        fig_loss.savefig(f'./model/loss_{args.optimizer}.png')
+        fig_loss.savefig('./model/loss.png')
         print("Model and plots saved.")
 
 
