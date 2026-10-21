@@ -1,3 +1,8 @@
+#force PyTorch backend and headless-safe Matplotlib backend
+import os
+os.environ.setdefault("DDE_BACKEND", "pytorch")
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sc
@@ -6,7 +11,7 @@ from scipy import special
 from scipy.stats import qmc
 import scipy.integrate
 import math
-import os
+from glob import glob
 import deepxde as dde
 #from deepxde.backend import tf
 import torch
@@ -18,11 +23,17 @@ import time
 import sys
 
 
-Data_path = 'path/to/NN model/ and data/'
-save_path = 'path/where/figures/save'
+# portable local model/data/figure paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+Data_path = os.path.join(BASE_DIR,'models') + os.sep
+save_path = os.path.join(Data_path,'figures') + os.sep
+os.makedirs(save_path,exist_ok=True)
 
-#make sure to update the number in ckpt_save_path to match the model you want to load.
-ckpt_save_path = Data_path + "model.pt-45000.pt"
+#Automatically load the latest SSBroyden checkpoint.
+checkpoints = glob(Data_path + "model_SSBroyden_*.pt")
+if not checkpoints:
+    raise FileNotFoundError("No model_SSBroyden_*.pt found. Run sheathsource.py first.")
+ckpt_save_path = max(checkpoints,key=lambda p:int(os.path.splitext(p)[0].rsplit('_',1)[1]))
 
 #load information from files
 soln = np.loadtxt(Data_path + 'data/solution0_fine.dat')
@@ -187,10 +198,16 @@ loss_weights = [1,1]
 lossE = ["MSE"] * 2
 
 model = dde.Model(data, net)
-model.compile("SSBroyden")
+model.compile("adam",lr=1.e-5,loss=lossE,loss_weights=loss_weights) #compile only for prediction
 
-#Restore model weights from checkpoint file.
-model.restore(save_path = ckpt_save_path, verbose=1)
+#Restore model weights from the SSBroyden PyTorch checkpoint.
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+checkpoint = torch.load(ckpt_save_path,map_location=device,weights_only=False)
+model.net.load_state_dict(checkpoint["model_state_dict"])
+model.net.to(device)
+model.net.eval()
+print("Loaded model:",ckpt_save_path)
+print("Device:",device)
 
 
 xpts = np.linspace(0,1,numxpts)
@@ -404,6 +421,9 @@ if sheathbool == True:
 
     #Build sheath profiles as a function of mass ratio, temperature ratio, and Knudsen number at the sheath entrance, center, and wall
     X = np.zeros([1,4])
+    counts = 0
+    totalcases = numMiMepts*numTiTepts*numKnudpts
+    print("Starting full sheath parameter scan:",totalcases,"cases")
     for i in range(0,numMiMepts):
         for j in range(0,numTiTepts):  
             for k in range(0,numKnudpts):    
@@ -423,6 +443,9 @@ if sheathbool == True:
                 MiMevec[i,j,k] = MiMeScan[i]
                 TiTevec[i,j,k] = TiTeScan[j]
                 KnSEvec[i,j,k] = KnudScan[k] #np.sqrt(neCenter)
+                counts += 1
+                if counts%100 == 0:
+                    print("Sheath scan:",counts,"/",totalcases,"(" + str(round(100*counts/totalcases,1)) + "%)")
 
 np.savetxt(save_path + "phiSE.txt", phiSEvec[:,:,0])
 
@@ -449,38 +472,6 @@ ax1.plot((xpts), phi, label='Argon', linestyle='-',color='b',linewidth=3)
 if sheathbool == True:
     ax1.scatter((xSE2), phiSE2,c='b',s=ptsize,zorder=10)
 
-"""phi = phiList[2]
-ne = neList[2]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='blue',linewidth=2)
-#ax1.plot((xSE3-L)/np.sqrt(ne[0]), phiSE3-phi[-1],'ob',linewidth=2)
-ax1.plot((xpts), phi, label='Helium', linestyle='-',color='g',linewidth=2)
-if sheathbool == True:
-    ax1.plot((xSE3), phiSE3,'og',linewidth=2)
-
-phi = phiList[3]
-ne = neList[3]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='blue',linewidth=2)
-#ax1.plot((xSE3-L)/np.sqrt(ne[0]), phiSE3-phi[-1],'ob',linewidth=2)
-ax1.plot((xpts), phi, label='Hydrogen', linestyle='-',color='cyan',linewidth=2)
-if sheathbool == True:
-    ax1.plot((xSE4), phiSE4,'oc',linewidth=2)
-
-phi = phiList[4]
-ne = neList[4]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='blue',linewidth=2)
-#ax1.plot((xSE3-L)/np.sqrt(ne[0]), phiSE3-phi[-1],'ob',linewidth=2)
-ax1.plot((xpts), phi, label='H,Min Knud,cold', linestyle='-',color='k',linewidth=2)
-if sheathbool == True:
-    ax1.plot((xSE5), phiSE5,'ok',linewidth=2)
-
-phi = phiList[5]
-ne = neList[5]
-#ax1.plot((xpts-L)/np.sqrt(ne[0]), phi-phi[-1], label='$\\phi$', linestyle='-',color='blue',linewidth=2)
-#ax1.plot((xSE3-L)/np.sqrt(ne[0]), phiSE3-phi[-1],'ob',linewidth=2)
-ax1.plot((xpts), phi, label='H,0.3 Knud,$T_i=T_e$', linestyle='-',color='m',linewidth=2)
-if sheathbool == True:
-    ax1.plot((xSE6), phiSE6,'om',linewidth=2)"""
-
 #ax1.set_ylabel("$\\phi$")
 ax1.set_xlabel("$x/\\lambda_{de}$")
 ax1.set_title("$e\\phi/T$")
@@ -493,58 +484,16 @@ fig2.set_tight_layout(True)
 
 ne = neList[0]
 ni = niList[0]
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ne, label='$n_e$', linestyle='--',color='black',linewidth=2)
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ni, label='$n_i$', linestyle='-',color='black',linewidth=2)
 ax2.plot((xpts), ne, label='Electron', linestyle='--',color='r',linewidth=3)
 ax2.plot((xpts), ni, label='Ion', linestyle='-',color='r',linewidth=3)
 if sheathbool == True:
     ax2.scatter((xSE1), niSE1,c='r',s=ptsize,zorder=10)
 ne = neList[1]
 ni = niList[1]
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ne, label='$n_e$', linestyle='--',color='red',linewidth=2)
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ni, label='$n_i$', linestyle='-',color='red',linewidth=2)
 ax2.plot((xpts), ne, linestyle='--',color='b',linewidth=3)
 ax2.plot((xpts), ni, linestyle='-',color='b',linewidth=3)
 if sheathbool == True:
     ax2.scatter((xSE2), niSE2,c='b',s=ptsize,zorder=10)
-"""ne = neList[2]
-ni = niList[2]
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ne, label='$n_e$', linestyle='--',color='blue',linewidth=2)
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ni, label='$n_i$', linestyle='-',color='blue',linewidth=2)
-ax2.plot((xpts), ne, linestyle='--',color='g',linewidth=2)
-ax2.plot((xpts), ni, label='He', linestyle='-',color='g',linewidth=2)
-if sheathbool == True:
-    ax2.plot((xSE3), niSE3,'og',linewidth=2)
-
-ne = neList[3]
-ni = niList[3]
-ax2.plot((xpts), ne, linestyle='--',color='cyan',linewidth=2)
-ax2.plot((xpts), ni, label='H', linestyle='-',color='cyan',linewidth=2)
-if sheathbool == True:
-    ax2.plot((xSE4), niSE4,'oc',linewidth=2)
-
-ne = neList[4]
-ni = niList[4]
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ne, label='$n_e$', linestyle='--',color='blue',linewidth=2)
-#ax2.plot((xpts-L)/np.sqrt(ne[0]), ni, label='$n_i$', linestyle='-',color='blue',linewidth=2)
-ax2.plot((xpts), ne, linestyle='--',color='k',linewidth=2)
-ax2.plot((xpts), ni, label='H,Min Knud,cold', linestyle='-',color='k',linewidth=2)
-if sheathbool == True:
-    ax2.plot((xSE5), niSE5,'ok',linewidth=2)
-
-ne = neList[5]
-ni = niList[5]
-ax2.plot((xpts), ne, linestyle='--',color='m',linewidth=2)
-ax2.plot((xpts), ni, label='H,0.3 Knud,$T_i=T_e$', linestyle='-',color='m',linewidth=2)
-if sheathbool == True:
-    ax2.plot((xSE6), niSE6,'om',linewidth=2)"""
-
-"""ax2.set_xlabel("$x/\\lambda_{de}$")
-ax2.set_title("Density Argon")
-ax2.legend()
-ax2.set_xlabel("$x/\\lambda_{de}$")
-ax2.set_title("Density Helium")
-ax2.legend()"""
 ax2.set_xlabel("$x/\\lambda_{de}$")
 ax2.set_title("Density")
 ax2.legend()
@@ -558,9 +507,6 @@ ax3.plot((xpts), np.ones(len(xpts)), label='$C_s$', linestyle=':',color='black',
 
 ue = ueList[0]
 ui = uiList[0]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='black',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='black',linewidth=2)
-#ax3.plot((xSE1-L)/np.sqrt(ne[0]), GammaiSE1/niSE1,'ok',linewidth=2)
 ax3.plot((xpts), ue, linestyle='--',color='r',linewidth=3)
 ax3.plot((xpts), ui, label='Hydrogen', linestyle='-',color='r',linewidth=3)
 if sheathbool == True:
@@ -568,66 +514,15 @@ if sheathbool == True:
 
 ue = ueList[1]
 ui = uiList[1]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='red',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='red',linewidth=2)
-#ax3.plot((xSE2-L)/np.sqrt(ne[0]), GammaiSE2/niSE2,'or',linewidth=2)
 ax3.plot((xpts), ue, linestyle='--',color='b',linewidth=3)
 ax3.plot((xpts), ui, label='Argon', linestyle='-',color='b',linewidth=3)
 if sheathbool == True:
     ax3.scatter((xSE2), uiSE2,c='b',s=ptsize,zorder=10)
 
-"""ue = ueList[2]
-ui = uiList[2]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='blue',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='blue',linewidth=2)
-#ax3.plot((xSE3-L)/np.sqrt(ne[0]), GammaiSE3/niSE3,'ob',linewidth=2)
-ax3.plot((xpts), ue, linestyle='--',color='g',linewidth=2)
-ax3.plot((xpts), ui, label='Helium', linestyle='-',color='g',linewidth=2)
-if sheathbool == True:
-    ax3.plot((xSE3), uiSE3,'og',linewidth=2)
-
-ue = ueList[3]
-ui = uiList[3]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='blue',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='blue',linewidth=2)
-#ax3.plot((xSE3-L)/np.sqrt(ne[0]), GammaiSE3/niSE3,'ob',linewidth=2)
-ax3.plot((xpts), ue, linestyle='--',color='cyan',linewidth=2)
-ax3.plot((xpts), ui, label='Hydrogen', linestyle='-',color='cyan',linewidth=2)
-if sheathbool == True:
-    ax3.plot((xSE4), uiSE4,'oc',linewidth=2)
-
-ue = ueList[4]
-ui = uiList[4]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='blue',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='blue',linewidth=2)
-#ax3.plot((xSE3-L)/np.sqrt(ne[0]), GammaiSE3/niSE3,'ob',linewidth=2)
-ax3.plot((xpts), ue, linestyle='--',color='k',linewidth=2)
-ax3.plot((xpts), ui , label='H,Min Knud,cold', linestyle='-',color='k',linewidth=2)
-if sheathbool == True:
-    ax3.plot((xSE5), uiSE5,'ok',linewidth=2)
-
-ue = ueList[5]
-ui = uiList[5]
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammae/ne, label='$u_e$', linestyle='--',color='blue',linewidth=2)
-#ax3.plot((xpts-L)/np.sqrt(ne[0]), Gammai/ni, label='$u_i$', linestyle='-',color='blue',linewidth=2)
-#ax3.plot((xSE3-L)/np.sqrt(ne[0]), GammaiSE3/niSE3,'ob',linewidth=2)
-ax3.plot((xpts), ue, linestyle='--',color='m',linewidth=2)
-ax3.plot((xpts), ui, label='H,0.3 Knud,$T_i=T_e$', linestyle='-',color='m',linewidth=2)
-if sheathbool == True:
-    ax3.plot((xSE6), uiSE6,'om',linewidth=2)"""
-
-#ax3.set_ylabel("$\\phi$")
 ax3.set_xlabel("$x/\\lambda_{de}$")
-#ax3[0,1].set_xlabel("$x/\\lambda_{de}$")
-#ax3[1,0].set_xlabel("$x/\\lambda_{de}$")
 ax3.set_title("Velocity [$C_s$]")
 ax3.set_ylim([0,5])
-#ax3[0,1].set_title("Velocity [$C_s$] Helium")
-#ax3[1,0].set_title("Velocity [$C_s$] Hydrogen")
 ax3.legend()
-#ax3[0,1].legend()
-#ax3[1,0].legend()
-#ax3.set_yscale("log")
 fig3.savefig(save_path + "Velocities.png")
 
 fluchs = xpts/L
@@ -650,24 +545,6 @@ ax4.set_title("Flux")
 ax4.legend()
 fig4.savefig(save_path + "Fluxes.png")
 
-#Sc = np.exp(-xpts**2/sigma**2)
-
-"""fig5, ax5 = plt.subplots(num=4,nrows=1,ncols=1, clear=True)
-fig5.set_tight_layout(True)
-
-#Gammae = GammaeList[0]
-#Gammai = GammaiList[0]
-#ne = neList[0] 
-#ax5.plot((xpts), neList*Source*nref, label='Ionization Source', linestyle='-',color='red',linewidth=2)
-ax5.plot((xpts), xpts/xpts/L, label='Center Source', linestyle='-',color='blue',linewidth=2)
-
-#ax4.set_ylabel("$\\phi$")
-ax5.set_xlabel("$x/\\lambda_{de}$")
-ax5.set_title("Sources")
-#ax4.set_yscale("log")
-ax5.legend()
-fig5.savefig(save_path + "Sources")"""
-
 def fixloss(l):
     teststeps = [0]
     loss2 = [l[0]]
@@ -679,7 +556,6 @@ def fixloss(l):
 
 fig16, ax16 = plt.subplots(num=16,nrows=1,ncols=1, clear=True)
 fig16.set_tight_layout(True)
-#np.savetxt(save_path + 'Ploss.txt',loss[:,1])
 ax16.plot(steps/1000, loss[:,1], label='Poisson Train Loss ', linestyle='-',color='red',linewidth=3)
 ax16.plot(steps/1000, loss[:,2], label='Ion Momentum Train Loss', linestyle='-',color='blue',linewidth=3)
 x,y = fixloss(loss[:,3])
@@ -709,7 +585,6 @@ y2 = model.predict(X2)
 
 uewall = np.sqrt(1836/(2*np.pi))
 
-#x = xMin + (xMax-xMin)*xpts
 phi = y2[:,0]
 ni = y2[:,1]
 ne = 1/uewall*np.exp(phi)
@@ -733,49 +608,11 @@ ni2list.append(ni)
 ue2list.append(ue)
 ui2list.append(ui)
 
-"""phi,ni,ne,ui,ue = pred(xpts,20,0,1e31,0)
-phi2list.append(phi)
-ne2list.append(ne)
-ni2list.append(ni)
-ue2list.append(ue)
-ui2list.append(ui)
-
-phi,ni,ne,ui,ue = pred(xpts,1,0,1e31,0.3)
-phi2list.append(phi)
-ne2list.append(ne)
-ni2list.append(ni)
-ue2list.append(ue)
-ui2list.append(ui)
-
-phi,ni,ne,ui,ue = pred(xpts,20,0,2e31,0)
-phi2list.append(phi)
-ne2list.append(ne)
-ni2list.append(ni)
-ue2list.append(ue)
-ui2list.append(ui)
-
-phi,ni,ne,ui,ue = pred(xpts,20,0,1e31,0.3)
-phi2list.append(phi)
-ne2list.append(ne)
-ni2list.append(ni)
-ue2list.append(ue)
-ui2list.append(ui)
-
-phi,ni,ne,ui,ue = pred(xpts,20,1,1e31,0)
-phi2list.append(phi)
-ne2list.append(ne)
-ni2list.append(ni)
-ue2list.append(ue)
-ui2list.append(ui)"""
-
 
 x0 = 0.01
 
 Source = 1/L
-#Source_int = x/L
 FluxAtWall = 1
-#ue = Source_int / ne
-#ui = Source_int / ni
 
 #RK45 algorithm
 #Uses PINN predictions as initial conditions to verify PINN solved the equations
@@ -837,36 +674,6 @@ xRKlist.append(xl)
 ueRKlist.append(ue)
 uiRKlist.append(ui)
 niRKlist.append(ni)
-
-"""xl, phi, ui, E, ue, ne, ni = runge(20,0,1e31,0)
-phiRKlist.append(phi)
-neRKlist.append(ne)
-xRKlist.append(xl)
-ueRKlist.append(ue)
-uiRKlist.append(ui)
-
-xl, phi, ui, E, ue, ne, ni = runge(1,0,1e31,0.3)
-phiRKlist.append(phi)
-neRKlist.append(ne)
-xRKlist.append(xl)
-ueRKlist.append(ue)
-uiRKlist.append(ui)
-
-xl, phi, ui, E, ue, ne, ni = runge(20,0,2e31,0)
-phiRKlist.append(phi)
-neRKlist.append(ne)
-xRKlist.append(xl)
-ueRKlist.append(ue)
-uiRKlist.append(ui)
-
-xl, phi, ui, E, ue, ne, ni = runge(20,0,1e31,0.3)
-phiRKlist.append(phi)
-neRKlist.append(ne)
-xRKlist.append(xl)
-ueRKlist.append(ue)
-uiRKlist.append(ui)"""
-
-#ni = ne*np.array(uelist)/(uilist)
 
 print(len(xRKlist[0]))
 xpts = np.linspace(0,L,numxpts)
@@ -930,200 +737,6 @@ ax23.set_xlabel('$\\lambda_{De}$')
 fig23.savefig(save_path + "DensitiesRK.png")
 plt.close()
 
-"""fig23, ax23 = plt.subplots(num=23,nrows=1,ncols=1, clear=True)
-fig23.set_tight_layout(True)
-x = xRKlist[1]
-phi = phi2list[1]
-phiRK = phiRKlist[1]
-ax23.plot(x,phiRK,color='b',label="RK45")
-ax23.plot(xpts,phi,color='g',linestyle='--',label='PINN')
-ax23.legend()
-ax23.set_title("Phi")
-ax23.set_xlabel('$\\lambda_{De}$')
-fig23.savefig(save_path + "phiRK1.png")
-plt.close()
-
-#print(x)
-fig24, ax24 = plt.subplots(num=24,nrows=1,ncols=1, clear=True)
-fig24.set_tight_layout(True)
-ui = ui2list[1]
-uiRK = uiRKlist[1]
-ax24.plot(x,uiRK,color='b',label="RK45")
-ax24.plot(xpts,ui,color='g',linestyle='--',label='PINN')
-ax24.legend()
-ax24.set_title("ui")
-ax24.set_xlabel('$\\lambda_{De}$')
-fig24.savefig(save_path + "uiRK1.png")
-plt.close()
-
-#print(x)
-fig25, ax25 = plt.subplots(num=25,nrows=1,ncols=1, clear=True)
-fig25.set_tight_layout(True)
-ue = ue2list[1]
-ueRK = ueRKlist[1]
-ax25.plot(x,ueRK,color='b',label="RK45")
-ax25.plot(xpts,ue,color='g',linestyle='--',label='PINN')
-ax25.legend()
-ax25.set_title("ue")
-ax25.set_xlabel('$\\lambda_{De}$')
-fig25.savefig(save_path + "ueRK1.png")
-plt.close()
-
-fig26, ax26 = plt.subplots(num=26,nrows=1,ncols=1, clear=True)
-fig26.set_tight_layout(True)
-x = xRKlist[2]
-phi = phi2list[2]
-phiRK = phiRKlist[2]
-ax26.plot(x,phiRK,color='b',label="RK45")
-ax26.plot(xpts,phi,color='g',linestyle='--',label='PINN')
-ax26.legend()
-ax26.set_title("Phi")
-ax26.set_xlabel('$\\lambda_{De}$')
-fig26.savefig(save_path + "phiRK2.png")
-plt.close()
-
-#print(x)
-fig27, ax27 = plt.subplots(num=27,nrows=1,ncols=1, clear=True)
-fig27.set_tight_layout(True)
-ui = ui2list[2]
-uiRK = uiRKlist[2]
-ax27.plot(x,uiRK,color='b',label="RK45")
-ax27.plot(xpts,ui,color='g',linestyle='--',label='PINN')
-ax27.legend()
-ax27.set_title("ui")
-ax27.set_xlabel('$\\lambda_{De}$')
-fig27.savefig(save_path + "uiRK2.png")
-plt.close()
-
-#print(x)
-fig28, ax28 = plt.subplots(num=28,nrows=1,ncols=1, clear=True)
-fig28.set_tight_layout(True)
-ue = ue2list[2]
-ueRK = ueRKlist[2]
-ax28.plot(x,ueRK,color='b',label="RK45")
-ax28.plot(xpts,ue,color='g',linestyle='--',label='PINN')
-ax28.legend()
-ax28.set_title("ue")
-ax28.set_xlabel('$\\lambda_{De}$')
-fig28.savefig(save_path + "ueRK2.png")
-plt.close()
-
-fig29, ax29 = plt.subplots(num=29,nrows=1,ncols=1, clear=True)
-fig29.set_tight_layout(True)
-x = xRKlist[3]
-phi = phi2list[3]
-phiRK = phiRKlist[3]
-ax29.plot(x,phiRK,color='b',label="RK45")
-ax29.plot(xpts,phi,color='g',linestyle='--',label='PINN')
-ax29.legend()
-ax29.set_title("Phi")
-ax29.set_xlabel('$\\lambda_{De}$')
-fig29.savefig(save_path + "phiRK3.png")
-plt.close()
-
-#print(x)
-fig30, ax30 = plt.subplots(num=30,nrows=1,ncols=1, clear=True)
-fig30.set_tight_layout(True)
-ui = ui2list[3]
-uiRK = uiRKlist[3]
-ax30.plot(x,uiRK,color='b',label="RK45")
-ax30.plot(xpts,ui,color='g',linestyle='--',label='PINN')
-ax30.legend()
-ax30.set_title("ui")
-ax30.set_xlabel('$\\lambda_{De}$')
-fig30.savefig(save_path + "uiRK3.png")
-plt.close()
-
-#print(x)
-fig31, ax31 = plt.subplots(num=31,nrows=1,ncols=1, clear=True)
-fig31.set_tight_layout(True)
-ue = ue2list[3]
-ueRK = ueRKlist[3]
-ax31.plot(x,ueRK,color='b',label="RK45")
-ax31.plot(xpts,ue,color='g',linestyle='--',label='PINN')
-ax31.legend()
-ax31.set_title("ue")
-ax31.set_xlabel('$\\lambda_{De}$')
-fig31.savefig(save_path + "ueRK3.png")
-plt.close()
-
-fig32, ax32 = plt.subplots(num=32,nrows=1,ncols=1, clear=True)
-fig32.set_tight_layout(True)
-x = xRKlist[4]
-phi = phi2list[4]
-phiRK = phiRKlist[4]
-ax32.plot(x,phiRK,color='b',label="RK45")
-ax32.plot(xpts,phi,color='g',linestyle='--',label='PINN')
-ax32.legend()
-ax32.set_title("Phi")
-ax32.set_xlabel('$\\lambda_{De}$')
-fig32.savefig(save_path + "phiRK4.png")
-plt.close()
-
-#print(x)
-fig33, ax33 = plt.subplots(num=33,nrows=1,ncols=1, clear=True)
-fig33.set_tight_layout(True)
-ui = ui2list[4]
-uiRK = uiRKlist[4]
-ax33.plot(x,uiRK,color='b',label="RK45")
-ax33.plot(xpts,ui,color='g',linestyle='--',label='PINN')
-ax33.legend()
-ax33.set_title("ui")
-ax33.set_xlabel('$\\lambda_{De}$')
-fig33.savefig(save_path + "uiRK4.png")
-plt.close()
-
-#print(x)
-fig34, ax34 = plt.subplots(num=34,nrows=1,ncols=1, clear=True)
-fig34.set_tight_layout(True)
-ue = ue2list[4]
-ueRK = ueRKlist[4]
-ax34.plot(x,ueRK,color='b',label="RK45")
-ax34.plot(xpts,ue,color='g',linestyle='--',label='PINN')
-ax34.legend()
-ax34.set_title("ue")
-ax34.set_xlabel('$\\lambda_{De}$')
-fig34.savefig(save_path + "ueRK4.png")
-plt.close()
-
-fig35, ax35 = plt.subplots(num=35,nrows=1,ncols=1, clear=True)
-fig35.set_tight_layout(True)
-x = xRKlist[5]
-phi = phi2list[5]
-phiRK = phiRKlist[5]
-ax35.plot(x,phiRK,color='b',label="RK45")
-ax35.plot(xpts,phi,color='g',linestyle='--',label='PINN')
-ax35.legend()
-ax35.set_title("Phi")
-ax35.set_xlabel('$\\lambda_{De}$')
-fig35.savefig(save_path + "phiRK5.png")
-plt.close()
-
-#print(x)
-fig36, ax36 = plt.subplots(num=36,nrows=1,ncols=1, clear=True)
-fig36.set_tight_layout(True)
-ui = ui2list[5]
-uiRK = uiRKlist[5]
-ax36.plot(x,uiRK,color='b',label="RK45")
-ax36.plot(xpts,ui,color='g',linestyle='--',label='PINN')
-ax36.legend()
-ax36.set_title("ui")
-ax36.set_xlabel('$\\lambda_{De}$')
-fig36.savefig(save_path + "uiRK5.png")
-plt.close()
-
-#print(x)
-fig37, ax37 = plt.subplots(num=37,nrows=1,ncols=1, clear=True)
-fig37.set_tight_layout(True)
-ue = ue2list[5]
-ueRK = ueRKlist[5]
-ax37.plot(x,ueRK,color='b',label="RK45")
-ax37.plot(xpts,ue,color='g',linestyle='--',label='PINN')
-ax37.legend()
-ax37.set_title("ue")
-ax37.set_xlabel('$\\lambda_{De}$')
-fig37.savefig(save_path + "ueRK5.png")
-plt.close()"""
 
 #Build input arrays to investigate derived quantities from RK solver
 numMiMepts = 20
