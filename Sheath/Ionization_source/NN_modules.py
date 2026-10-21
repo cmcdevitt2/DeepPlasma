@@ -171,17 +171,22 @@ def TrainScipy(model, loss_fn, method, X_train, X_test, test_every, epochs, maxi
                        'maxcor':100,
                        'gtol': np.finfo(np.float64).eps,
                        'ftol': np.finfo(np.float64).eps}
-    if method=='BFGS':
+    scipy_method = method
+    if method=='SSBroyden':
+        scipy_method = 'BFGS'
         scipy_options={'maxiter': maxiter,
                        'gtol': np.finfo(np.float64).eps,
                        'method_bfgs': 'SSBroyden2'}
+    elif method=='BFGS':
+        scipy_options={'maxiter': maxiter,
+                       'gtol': np.finfo(np.float64).eps}
 
     #build the Scipy function to minimize the loss
     res = minimize(
         loss_and_grad,
         flat_params_init,
         args=(model, loss_fn, X_train),
-        method=method,
+        method=scipy_method,
         jac=True,
         #callback=callback,
         options=scipy_options,        

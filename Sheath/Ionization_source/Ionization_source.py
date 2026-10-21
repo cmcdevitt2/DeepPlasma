@@ -1,12 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 import torch
 import torch.nn.functional as F
 from pytorch_optimizer.optimizer.soap import SOAP
 from torch.quasirandom import SobolEngine
 from NN_modules import *
 
-save_path = '/path/to/saved/model/and/to/save/figures/'
+save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models') + os.sep
+os.makedirs(save_path, exist_ok=True)
 
 #Set the default data type and random seed for repeatability
 torch.set_default_dtype(torch.float64)
@@ -214,9 +216,10 @@ def main():
 
     #Use second order optimizer SSBroyden next to drill down and converge the loss
     for i in range(Num_SSB):
+        print(f"\n--- SSBroyden round {i+1}/{Num_SSB} ---")
         losses_Scipy, test_loss = TrainScipy(model=model,
                                             loss_fn=pde,
-                                            method="BFGS",
+                                            method="SSBroyden",
                                             X_train=X_train,
                                             X_test=X_test,
                                             test_every=test_every,
