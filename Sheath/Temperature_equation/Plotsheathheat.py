@@ -1,3 +1,7 @@
+import os
+os.environ.setdefault("DDE_BACKEND", "pytorch")
+os.environ.setdefault("MPLBACKEND", "Agg")
+
 import math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -13,6 +17,7 @@ sheathbool = False #Turns off/on sheath entrance calculations as well as graphs 
 
 import time
 import sys
+from glob import glob
 
 args = sys.argv
 num_params = len(sys.argv)
@@ -26,11 +31,16 @@ except:
 if num_params > 1:
     name = sys.argv[1]
 
-save_path = 'path/to/save/figures'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+Data_path = os.path.join(BASE_DIR,'models') + os.sep
+save_path = os.path.join(Data_path,'figures') + os.sep
+os.makedirs(save_path,exist_ok=True)
 
-Data_path = 'path/to/nn/checkpoint'
-ckpt_save_path = Data_path + "model.pt-25033.pt"
-#make sure to update the correct checkpoint number
+checkpoints = glob(Data_path + "model_SSBroyden_*.pt")
+if not checkpoints:
+    raise FileNotFoundError("No model_SSBroyden_*.pt found. Run sheathheat.py first.")
+ckpt_save_path = max(checkpoints,key=lambda p:int(os.path.splitext(p)[0].rsplit('_',1)[1]))
+
 trainpts = np.loadtxt(Data_path + 'data/train.dat')
 loss = np.loadtxt(Data_path + 'data/loss.dat')
 
@@ -267,10 +277,18 @@ data = dde.data.PDE(
 #lossE = ["MSE"] * 4
 
 model = dde.Model(data, net)
-model.compile("SSBroyden")#,external_trainable_variables=Tewall)
-#variable = dde.callbacks.VariableValue(Tewall, period=1000)
-#Load model weights
-model.restore(save_path = ckpt_save_path, verbose=1)
+model.compile("adam",lr=lr) #compile only for prediction
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+checkpoint = torch.load(ckpt_save_path,map_location=device,weights_only=False)
+model.net.load_state_dict(checkpoint["model_state_dict"])
+model.net.to(device)
+with torch.no_grad():
+    Tewall.data = torch.as_tensor(checkpoint["Tewall"],dtype=Tewall.dtype,device=device)
+model.net.eval()
+print("Loaded model:",ckpt_save_path)
+print("Tewall:",float(Tewall.detach().cpu()))
+print("Device:",device)
 
 # Load training points
 xtrainpts = trainpts[:]
@@ -588,7 +606,7 @@ ax16.legend()
 fig16.savefig(save_path + "Losses.png")
 
 xpts = np.linspace(0,1,100)
-X2 = xpts
+X2 = xpts[:,None]
 y2 = model.predict(X2,operator=pde)
 
 resphi = y2[0]

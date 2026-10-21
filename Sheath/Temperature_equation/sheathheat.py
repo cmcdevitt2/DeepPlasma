@@ -1,12 +1,17 @@
+import os
+os.environ.setdefault("DDE_BACKEND", "pytorch")
+
 import deepxde as dde
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
+from scipy.optimize import minimize
 
 import time
 import sys
 
-save_path = '/path/to/model/'
+save_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models') + os.sep
+os.makedirs(save_path + 'data/', exist_ok=True)
 
 #set default options
 dde.config.set_default_float("float64")
@@ -61,6 +66,38 @@ Epsnormsq = Eps0**2*Ts**2/(q**2*xr*nr)
 
 #Initialize trainable variable for electron temperature at the wall
 Tewall = dde.Variable(-1.0, dtype=torch.float64)
+
+def train_ssbroyden(model,data,maxiter=5000,gtol=1e-12,display_every=1000):
+    params = [p for p in model.net.parameters() if p.requires_grad] + [Tewall]
+    sizes = [p.numel() for p in params]
+    X_train,y_train,aux_train = data.train_next_batch()
+    def pack():
+        return torch.cat([p.detach().reshape(-1) for p in params]).cpu().numpy().astype(np.float64)
+    def unpack(x):
+        with torch.no_grad():
+            k = 0
+            for p,n in zip(params,sizes):
+                p.copy_(torch.as_tensor(x[k:k+n],dtype=p.dtype,device=p.device).reshape_as(p)); k += n
+    neval = [0]
+    def objective(x):
+        unpack(x)
+        for p in params:
+            if p.grad is not None:
+                p.grad = None
+        _,losses = model.outputs_losses_train(X_train,y_train,aux_train)
+        total = torch.sum(losses); total.backward()
+        grad = np.concatenate([p.grad.detach().reshape(-1).cpu().numpy() for p in params]).astype(np.float64)
+        neval[0] += 1
+        if neval[0] == 1 or neval[0]%display_every == 0:
+            print(f"SSB eval {neval[0]:6d} | Total={float(total.detach().cpu()):.6e} | Losses={losses.detach().cpu().numpy()}")
+        return float(total.detach().cpu()),grad
+    result = minimize(objective,pack(),jac=True,method="BFGS",options={"method_bfgs":"SSBroyden2","maxiter":maxiter,"gtol":gtol,"disp":True})
+    unpack(result.x)
+    model.train_state.set_data_train(X_train,y_train,aux_train)
+    model.train_state.step += int(result.nit); model._test()
+    print(f"SSBroyden finished | nit={result.nit} | nfev={result.nfev} | final={result.fun:.6e} | success={result.success}")
+    print("SSBroyden message:",result.message)
+    return result
 
 def save_solution(geom, model, filename):
     x = geom.uniform_points(40**3)
@@ -173,7 +210,7 @@ def pde(inputs, outputs):
     dne_x = dde.grad.jacobian(ne,inputs, i=0, j=0) / (xMax-xMin)
     dni_x = dde.grad.jacobian(ni,inputs, i=0, j=0) / (xMax-xMin)
     dTe_x = dde.grad.jacobian(Te,inputs, i=0, j=0) / (xMax-xMin)
-    dTe_xx = dde.grad.hessian(Te,inputs, i=0, j=0) / (xMax-xMin)**2
+    dTe_xx = dde.grad.hessian(Te,inputs, component=0, i=0, j=0) / (xMax-xMin)**2
 
     #define convective and conductive losses
     qe = 0.71*ne*Te*(ue-ui) - 3.16*ne*Te*MiMe*dTe_x*Taue(ni,Te) 
@@ -263,27 +300,19 @@ def main():
     dde.saveplot(losshistory, train_state, issave=True, isplot=True,output_dir= save_path + 'data')
 
     #Then polish the model with SSBroyden to drive residual down further
-    #Do NOT resample points because it destroys SSB's training
+    #Keep the collocation points fixed during each complete SSBroyden solve.
     for i in range(0,NumBFGS):
-        model.compile("SSBroyden",external_trainable_variables=Tewall)
-
-        model.train_step.optimizer_kwargs = {'options': {'maxcor': 100,
-                                                        'ftol': 1.0 * np.finfo(float).eps,
-                                                        'gtol': 1.0 * np.finfo(float).eps,
-                                                        'maxiter': epochsBFGS,
-                                                        'maxfun':  epochsBFGS,
-                                                        'method_bfgs':'SSBroyden2',
-                                                        # 'method_bfgs':'l-bfgs-b',
-                                                        'maxls': 200}}
-
-        losshistory, train_state = model.train(display_every=1000,callbacks=[variable,PDE_Resampler],model_save_path = save_path + 'model.pt')
-
-        
+        print(f"\n--- SSBroyden round {i+1}/{NumBFGS} ---")
+        result = train_ssbroyden(model,data,maxiter=epochsBFGS,gtol=1e-12,display_every=1000)
         save_solution(geom, model, "solution0")
-
-        dde.saveplot(losshistory, train_state, issave=True, isplot=True,output_dir= save_path + 'data')
-        #Get the value of Tewall after training
-        Tew = variable.get_value()
-        print(Tew)
+        Tew = float(Tewall.detach().cpu())
+        torch.save({"model_state_dict":model.net.state_dict(),"Tewall":Tew,
+                    "ssbroyden_result":{"nit":result.nit,"nfev":result.nfev,"fun":result.fun,
+                    "success":result.success,"message":str(result.message)}},
+                   save_path + f"model_SSBroyden_{i+1}.pt")
+        dde.saveplot(model.losshistory, model.train_state, issave=True, isplot=True,output_dir= save_path + 'data')
+        print("Tewall =",Tew)
+        if i < NumBFGS-1:
+            data.resample_train_points(pde_points=True,bc_points=True)
 if __name__ == "__main__":
     main()
