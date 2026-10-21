@@ -4,12 +4,13 @@ import scipy as sc
 from scipy import optimize
 import scipy.integrate
 import math
+import os
 
-from MagicNeutrals import *
+from Ionization_source import *
 
 sheathbool = False #Turns off/on sheath entrance calculations as well as graphs that use those calculations
 
-Data_path = '/path/to/saved/model/and/for/figure/saving/'
+Data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models') + os.sep
 ckpt_save_path = Data_path + "model_final.pt"
 
 loss = np.loadtxt(Data_path + 'loss_history.txt')
@@ -17,6 +18,7 @@ test_loss = np.loadtxt(Data_path + 'test_history.txt')
 steps = np.arange(0,len(loss[:,0]),1)
 test_steps = np.arange(0,len(test_loss[:,0]),1)
 Data_path = Data_path + 'figures/'
+os.makedirs(Data_path, exist_ok=True)
 
 numxpts = 1000 # only used when model is loaded
 
@@ -215,80 +217,6 @@ def residual_pts(x,Te,TiTe,S0,nn):
 
     return Y
 
-testFlux1 = []
-testFlux2 = []
-testFlux3 = []
-testFlux4 = []
-
-def mfp(Te,TiTe,S0,nn):
-    #compute the mean free path of the ions
-    uref = np.sqrt((Te+Te*TiTe)*q/(mi))
-    lref = (Eps0*Te*uref/(S0*L*q))**(1/3)
-    nref = S0*L*lref/uref
-    ui = 1
-    un = 0
-
-    return nn*(ui-un)*signn(TiTe*Te,lref,nref) 
-
-meanfp = []
-
-#build an array of mean free paths for various ion temperatures
-#remember that the ion temp is related to the electron temp through the Ti/Te ratio
-#With TiTeMax, the ion temp equals the electron temp
-for i in TeScan:
-    x = mfp(i,TiTeMax,S0Max,nnMax)
-    meanfp.append(x)
-
-fig, ax = plt.subplots(nrows=1,ncols=1, clear=True)
-fig.set_tight_layout(True)
-ax.plot(TeScan, meanfp, color='b')
-ax.set_yscale("log")
-ax.set_xlabel("Ion Temperature (eV)")
-ax.set_ylabel("Mean Free Path ($\\lambda_{De}$)")
-ax.set_title("Mean Free Path vs Ion Temperature")
-fig.savefig(Data_path + "MeanFreePath.png")
-plt.close()
-
-for i in nnScan:
-    #Find the ion flux at the wall for different neutral densities, source strengths, and electron temperatures
-    sol = optimize.root(SheathEntrance, [L-5], args = (TeVal1,TiTeVal1,S0Val1,i))
-    xSE = sol.x
-    phiedge1, niedge1, needge1, uiedge1, ueedge1,_ = pred(L,TeVal1,TiTeVal1,S0Val4,i)
-    testFlux1.append(uiedge1*niedge1)
-    phiedge2, niedge2, needge2, uiedge2, ueedge2,_ = pred(L,TeVal2,TiTeVal1,S0Val4,i)
-    testFlux2.append(uiedge2*niedge2)
-    phiedge3, niedge3, needge3, uiedge3, ueedge3,_ = pred(L,TeVal1,TiTeVal1,S0Val1,i)
-    testFlux3.append(uiedge3*niedge3)
-    phiedge4, niedge4, needge4, uiedge4, ueedge4,_ = pred(L,TeVal2,TiTeVal1,S0Val1,i)
-    testFlux4.append(uiedge4*niedge4)
-
-#Plot the flux as a function of neutral density
-fig, ax = plt.subplots(nrows=1,ncols=1, clear=True)
-fig.set_tight_layout(True)
-
-ax.plot(nnScan, testFlux1, linestyle='-',label='Te=1 eV', color='r', linewidth=2)
-ax.plot(nnScan, testFlux4, linestyle='-', label='Low $S_0$', color='b', linewidth=2)
-ax.plot(nnScan, testFlux2, linestyle='-', label='High $S_0$', color='g', linewidth=2)
-
-
-ax.set_xlabel("Neutral Density $n_n$")
-ax.set_ylabel("Flux ($\\Gamma$)")
-ax.set_title("Flux with High Source")
-ax.legend()
-fig.savefig(Data_path + "SheathParams1.png")
-plt.close()
-
-fig, ax = plt.subplots(nrows=1,ncols=1, clear=True)
-fig.set_tight_layout(True)
-
-ax.plot(nnScan, testFlux3, linestyle='-',label='Te=1 eV', color='b', linewidth=2)
-ax.plot(nnScan, testFlux4, linestyle='-', label='Te=20 eV', color='r', linewidth=2)
-
-ax.set_xlabel("Neutral Density $n_n$")
-ax.set_ylabel("Flux ($\\Gamma$)")
-ax.set_title("Flux with low Source")
-fig.savefig(Data_path + "SheathParams2.png")
-plt.close()
 
 # Find sheath entrance
 sol = optimize.root(SheathEntrance, [L-5], args = (TeVal1,TiTeVal1,S0Val1,nnVal1))
@@ -459,53 +387,6 @@ ax4.set_title("Flux")
 #fig.subplots_adjust(left=0.15)
 fig4.savefig(Data_path + "Flux")#,bbox_inches='tight')
 
-def Sauces(S,Te):
-    #Computes the source, the ionization rate, and the recombination rate
-    uref = (Te*q/mi)**(1/2)
-    lref = (Eps0*Te*uref/(S*L*q))**(1/3)
-    nref = S*L*lref/uref
-    barS0 = S*lref**4*L/uref
-    barSion = Sion2(Te,15.8)*(lref*nref/uref)
-    barSrec = Srec2(Te,15.8,1)/(lref**2*uref)
-
-    return barS0, barSion, barSrec
-
-#Call the function to compute the source and sink terms for the smallest and largest source cases
-barS01, barSion1, barSrec1 = Sauces(S0Min,TeMin)
-barS02, barSion2, barSrec2 = Sauces(S0Max,TeMax)
-
-fig5, ax5 = plt.subplots(num=4,nrows=2,ncols=3, clear=True)
-fig5.set_tight_layout(True)
-
-ne = neList[0] 
-ni = niList[0] 
-ax5[0,0].plot((xpts), nnMax*ne*barSion1*barS01, label='Ionization Source', linestyle='-',color='red',linewidth=3)
-ax5[0,1].plot((xpts), ni*ne*barSrec1*barS01, label='Recombination Source', linestyle='-',color='blue',linewidth=3)
-ax5[0,2].plot(xpts, [0.02 for i in range(len(xpts))],linestyle='-',color='g',linewidth=3)
-
-ne = neList[1] 
-ni = niList[1] 
-ax5[1,0].plot((xpts), nnMax*ne*barSion2*barS02, label='Ionization Source', linestyle='-',color='red',linewidth=3)
-ax5[1,1].plot((xpts), ni*ne*barSrec2*barS02, label='Recombination Source', linestyle='-',color='blue',linewidth=3)
-ax5[1,2].plot(xpts,[0.02 for i in range(len(xpts))],linestyle='-',color='g',linewidth=3)
-
-
-#ax4.set_ylabel("$\\phi$")
-ax5[0,0].set_xlabel("$x/\\lambda_{de}$")
-ax5[0,1].set_xlabel("$x/\\lambda_{de}$")
-ax5[0,2].set_xlabel("$x/\\lambda_{de}$")
-ax5[1,0].set_xlabel("$x/\\lambda_{de}$")
-ax5[1,1].set_xlabel("$x/\\lambda_{de}$")
-ax5[1,2].set_xlabel("$x/\\lambda_{de}$")
-ax5[0,0].set_title("Ion low Te")
-ax5[0,1].set_title("Rec low Te")
-ax5[0,2].set_title("Source")
-ax5[1,0].set_title("Ion high Te")
-ax5[1,1].set_title("Rec high Te")
-ax5[1,2].set_title("Source")
-#ax4.set_yscale("log")
-#ax5.legend()
-fig5.savefig(Data_path + "Sources")
 
 if sheathbool == True:
     #These plots are for the various derived quantites at the sheath entrance
@@ -616,7 +497,6 @@ fig16.savefig(Data_path + "Losses.png")
 Tepts = np.linspace(TeMin,TeMax,numxpts)
 TiTepts = np.linspace(TiTeMin,TiTeMax,numxpts)
 S0pts = np.linspace(S0Min,S0Max,numxpts)
-Knudpts = np.linspace(KnudMin,KnudMax,numxpts)
 nnpts = np.linspace(nnMin,nnMax,numxpts)
 
 #Create a set of test points to evaluate the residuals at
