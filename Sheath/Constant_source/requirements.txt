@@ -1,0 +1,6 @@
+DeepXDE==1.10.0
+matplotlib==3.6.3
+numpy==1.24.4
+scipy==1.18.0
+torch==2.7.0+cu128
+torch==2.9.0

@@ -1,0 +1,8 @@
+matplotlib==3.6.3
+numpy==1.24.4
+pytorch_optimizer==3.10.1
+scipy==1.18.0
+torch==2.7.0+cu128
+torch==2.9.0
+tqdm==4.66.2
+~qdm==4.64.0
