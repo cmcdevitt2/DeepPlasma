@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ hashFiles('demo/web/package-lock.json') != '' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -58,6 +59,7 @@ jobs:
           path: _pages
 
   deploy:
+    if: ${{ hashFiles('demo/web/package-lock.json') != '' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
